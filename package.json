@@ -1,0 +1,14 @@
+{
+  "name": "web-catch",
+  "version": "0.1.0",
+  "description": "网页内容提取：URL → 干净 Markdown",
+  "type": "module",
+  "bin": {
+    "web-catch": "bin/cli.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "linkedom": "^0.18.0",
+    "turndown": "^7.2.0"
+  }
+}
