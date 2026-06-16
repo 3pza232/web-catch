@@ -1,103 +1,77 @@
 ---
 name: web-catch
-description: 用户贴出 URL、问"这个页面讲了什么"、"帮我看看这个链接"、"打开这个网址"、"提取这个页面"时触发。web-catch 是一个将网页提取为干净 Markdown 的 CLI 工具，专为 AI 阅读优化——自动去除广告/导航/脚本，只留正文 + 链接清单，最大程度降低 token 开销。
+description: 用户贴出URL，或问"XXX是什么/怎么做"等需要从网页获取信息的问题时触发。web-catch 将网页提取为干净 Markdown，自动去广告/导航，只留正文+链接。常与 WebSearch 配合使用：先搜后抓。
 ---
 
-# web-catch — 网页内容提取工具
+# web-catch — 网页内容提取
 
-`web-catch <url>` 一键抓取网页，输出干净的 Markdown 正文 + 链接清单。
-
-## 原理
-
-```
-<url> → HTTP 请求 → Readability (Firefox Reader View 同款算法) → Markdown → stdout
-```
-
-- 底层使用 `@mozilla/readability` 做正文提纯（Firefox 阅读模式同款）
-- `turndown` 做 HTML→Markdown 转换
-- 自动去除广告、导航栏、侧栏、页脚、脚本、样式
-- 链接提取只从正文区域（`<main>/<article>/#content` 等）抓取
+`web-catch <url>` 抓取网页，输出干净 Markdown 正文 + 链接清单。
 
 ## 基础用法
 
 ```
-web-catch <url>               输出干净的 Markdown 正文 + 链接清单
+web-catch <url>                          # 抓取正文 + 链接
+web-catch <url> --no-links               # 只要正文，不要链接
+web-catch <url> --links-only             # 只要链接，不要正文（侦查用）
+web-catch <url> --timeout 15             # 自定义超时（默认10s）
+web-catch <url> --user-agent "xxx"       # 自定义 UA（默认 web-catch/0.1.0）
+web-catch <url> --output file.md         # 写入文件
+curl <url> | web-catch --url <url>       # 管道模式
 ```
 
-输出格式：
+## 输出格式
+
 ```
 url: https://example.com
 title: 页面标题
-fetch_time: 2026-06-14 12:00:00 UTC
+fetch_time: 2026-06-16 12:00:00 UTC
 word_count: 2340
-                              ← 空行分隔元信息与正文
-# 正文 Markdown 内容...
+
+# 正文 Markdown...
 ---
 ## 页面链接 (14)
 1. [链接标题](https://...)
    - 上下文: 周围的文字片段
-2. ...
 ```
 
-## 选项
+## 触发场景
 
-| 选项 | 功能 |
-|------|------|
-| `--no-links` | 去掉末尾的链接清单 |
-| `--links-only` | 只要链接清单，不要正文 |
-| `--output <file>` | 写入文件（默认 stdout） |
-| `--timeout <sec>` | 超时秒数（默认 10） |
-| `--user-agent <str>` | 自定义 UA |
-| `--help` | 查看帮助 |
-| `--version` | 显示版本号 |
+### A. 用户贴了 URL
+直接 `web-catch <url>` 抓取。
 
-## 管道模式
+### B. 用户问了一个需要查资料的问题（核心工作流）
+**先用 WebSearch 搜到 URL，再用 web-catch 抓详情：**
 
 ```
-curl <url> | web-catch --url <url>
+用户: "Noita种太阳的流程是什么?"
+  → WebSearch("Noita 种太阳 流程") 获取相关 URL
+    → web-catch "https://noita.wiki.gg/zh/wiki/太阳" 抓取详细攻略
 ```
 
-从 stdin 读 HTML，`--url` 提供真实 URL（用于链接补全和元信息）。
+这样搜+读闭环，比只用其中任何一个都完整。
 
-## 退出码
+### C. 需要侦查页面结构（大页面/不确定价值时）
+先用 `--links-only` 看看页面有哪些出口，再决定抓哪个子页面。
 
-| 码 | 含义 |
-|----|------|
-| 0 | 成功 |
-| 1 | 网络错误 / HTTP 错误 |
-| 2 | 提取失败（无法解析正文） |
-| 3 | 参数错误 |
+## 行为细节（源码发现）
 
-## 使用原则
+- **JS 不执行** — 基于 `linkedom` 解析 DOM，SPA 页面正文为空时自动降级输出原始 body 文本
+- **自动跟随重定向** — `redirect: follow`，finalUrl 是重定向后的地址
+- **链接限 50 条** — 页面链接最多输出 50 条，超出截断
+- **链接只从正文区域提取** — `<main>/<article>/[role=main]/.content/#content` 等
+- **编码自动检测** — 支持 UTF-8/16/32 及 BOM 检测
 
-### 什么时候用 web-catch
+## 常见失败处理
 
-- **用户贴了一个 URL**，问"这个页面讲了什么"、"帮我看看"、"提取这个" —— 直接 `web-catch <url>`
-- **需要获取文档/API 参考 / 教程**等在线内容
-- **需要抓取页面中的所有链接**进行后续分析
+| 症状 | 原因 | 对策 |
+|------|------|------|
+| word_count=1，正文为空 | SPA / JS 渲染页 | 提示用户页面是 SPA，建议手动复制内容 |
+| 正文有但明显残缺 | 需要登录/反爬 | 尝试 `--user-agent` 换 UA，或提示需要认证 |
+| timeout | 网络慢或资源大 | `--timeout 15` 或更多 |
+| HTTP 4xx/5xx | 链接失效或服务器拒绝 | 如实告诉用户状态码 |
 
-### 什么时候不用
+## 注意事项
 
-- **网页需要登录** — `web-catch` 不处理认证
-- **纯 JS 渲染 SPA** — 部分 SPA HTML 中无正文，提取可能为空
-- **用户明确说不需要抓取** — 别擅自去抓
-
-### 工作流建议
-
-1. 先用 `web-catch <url>` 获取正文 Markdown
-2. 根据需要，结合输出中的链接清单，对有价值的子页面继续调用 `web-catch`
-3. 遇到 SPA 页面正文为空时，尝试 `web-catch <url> --links-only` 先获取链接，再逐个击破
-
-### --links-only 适用场景
-
-快速侦查页面结构，看看这个页面有哪些出口，再决定哪些链接值得深入。比全部抓取省大量 token。
-
-## 举例
-
-```
-用户: 你帮我看看这个页面讲了什么
-      https://docs.cocos.com/creator/3.8/manual/zh/advanced-topics/native-plugins/brief.html
-
-→ 你: 运行 web-catch "https://docs.cocos.com/..." --timeout 15
-     根据返回的 Markdown 内容向用户总结要点
-```
+- SPA 页面（Vue/React 单页应用）无法正常提取 — 无法绕过
+- word_count 对中文按空格分词，仅供参考
+- 遇到明确说"不要抓取"的用户指示，尊重要求
