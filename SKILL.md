@@ -1,11 +1,17 @@
 ---
 name: web-catch
-description: 用户贴出URL，或问"XXX是什么/怎么做"等需要从网页获取信息的问题时触发。web-catch 将网页提取为干净 Markdown，自动去广告/导航，只留正文+链接。常与 WebSearch 配合使用：先搜后抓。
+description: web-catch 是独立 CLI 工具，非内置工具。当用户贴出 URL，或问"XXX是什么/怎么做"等需要从网页获取信息的问题时触发。加载此 skill 获取 web-catch CLI 工具的使用说明，然后在 Bash 中执行，常与 WebSearch 配合使用：先搜后抓。。
 ---
 
-# web-catch — 网页内容提取
+# web-catch — 网页内容提取 CLI 工具
 
-`web-catch <url>` 抓取网页，输出干净 Markdown 正文 + 链接清单。
+## 重要：执行方式
+
+web-catch 是安装在系统上的独立 CLI 可执行文件，**不是 WebFetch 工具**。
+
+**正确执行方式：在 Bash 中运行 `web-catch <url>`。**
+
+**禁止：** 不要使用 WebFetch 工具代替 web-catch。用户安装 web-catch 就是为了替代它。
 
 ## 基础用法
 
@@ -18,6 +24,8 @@ web-catch <url> --user-agent "xxx"       # 自定义 UA（默认 web-catch/0.1.0
 web-catch <url> --output file.md         # 写入文件
 curl <url> | web-catch --url <url>       # 管道模式
 ```
+
+所有上述命令都在 **Bash** 工具中执行。
 
 ## 输出格式
 
@@ -34,26 +42,26 @@ word_count: 2340
    - 上下文: 周围的文字片段
 ```
 
-## 触发场景
+## 触发场景与操作方式
 
 ### A. 用户贴了 URL
-直接 `web-catch <url>` 抓取。
+→ **Bash:** `web-catch <url>`
 
-### B. 用户问了一个需要查资料的问题（核心工作流）
-**先用 WebSearch 搜到 URL，再用 web-catch 抓详情：**
+### B. 用户问需要查资料的问题（核心工作流）
+先用 **WebSearch** 搜到 URL，再用 **web-catch** 抓详情：
 
 ```
 用户: "Noita种太阳的流程是什么?"
   → WebSearch("Noita 种太阳 流程") 获取相关 URL
-    → web-catch "https://noita.wiki.gg/zh/wiki/太阳" 抓取详细攻略
+    → Bash("web-catch https://noita.wiki.gg/zh/wiki/太阳") 抓取详细攻略
 ```
 
 这样搜+读闭环，比只用其中任何一个都完整。
 
 ### C. 需要侦查页面结构（大页面/不确定价值时）
-先用 `--links-only` 看看页面有哪些出口，再决定抓哪个子页面。
+→ **Bash:** `web-catch <url> --links-only` 看页面有哪些出口，再决定抓哪个子页面。
 
-## 行为细节（源码发现）
+## 行为细节
 
 - **JS 不执行** — 基于 `linkedom` 解析 DOM，SPA 页面正文为空时自动降级输出原始 body 文本
 - **自动跟随重定向** — `redirect: follow`，finalUrl 是重定向后的地址
