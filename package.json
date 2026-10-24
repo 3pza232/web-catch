@@ -1,7 +1,7 @@
 {
   "name": "web-catch",
   "version": "0.2.0",
-  "description": "Fetch web pages as clean Markdown — or search the web through the DeepSeek Search API.",
+  "description": "Fetch web pages as clean Markdown, search the web, or serve both as an MCP server.",
   "type": "module",
   "bin": {
     "web-catch": "bin/cli.mjs"
@@ -23,10 +23,12 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node test/smoke.mjs",
-    "test:live": "node test/smoke.mjs --live"
+    "test:live": "node test/smoke.mjs --live",
+    "test:mcp": "node test/mcp.mjs"
   },
   "keywords": [
     "cli",
+    "mcp",
     "markdown",
     "readability",
     "web-scraping",
@@ -34,10 +36,12 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@mozilla/readability": "^0.5.0",
     "linkedom": "^0.18.12",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
-    "unpdf": "^1.9.1"
+    "unpdf": "^1.9.1",
+    "zod": "^4.6.7"
   }
 }
