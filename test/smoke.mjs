@@ -17,6 +17,7 @@ import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
 import { parseHeaders, readCookieFile } from '../lib/net/http.mjs';
 import { readCache, writeCache, cacheRoot, keyOf } from '../lib/cache.mjs';
+import { DeepSeekClient } from '../lib/net/deepseek.mjs';
 import { detectLanguage, filterLanguages, normalizeApiContent, unescapePunctuation } from '../lib/api-content.mjs';
 import { DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES } from '../lib/constants.mjs';
 
@@ -510,6 +511,14 @@ test('api content: normalization combines filtering, unescaping and opt-out', ()
     'This is the original English content.');
   assert.ok(normalizeApiContent('中文内容段落。', { lang: 'en' }).includes('中文'));
   assert.equal(normalizeApiContent('a\\. b', { unescape: false }), 'a\\. b');
+});
+
+test('search: localization must be an IP address', async () => {
+  const client = new DeepSeekClient({ apiKey: 'test-key' });
+  await assert.rejects(
+    client.search({ query: 'q', localization: 'not-an-ip' }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
 });
 
 test('config: explicit key wins', () => {

@@ -284,6 +284,9 @@ try {
     'query', 'count', 'needContent', 'oriQuestion', 'localization', 'fetchTop', 'maxChars', 'json',
     'timeout', 'retries',
   ].sort());
+  for (const tool_ of tools) {
+    assert.equal(tool_.inputSchema.additionalProperties, false, `${tool_.name} schema is not strict`);
+  }
   console.log('ok   tools/list schemas expose the CLI parity options');
 
   const article = `${base}/article`;
@@ -514,6 +517,10 @@ try {
   const longQuery = await tool('search', { query: 'x'.repeat(129) }, 40);
   assert.ok(longQuery.isError, 'oversized search query was not rejected');
   assert.match(longQuery.text, /at most 128/);
+
+  const badLocalization = await tool('search', { query: 'fixture', localization: 'not-an-ip' }, 44);
+  assert.ok(badLocalization.isError, 'invalid localization was not rejected');
+  assert.match(badLocalization.text, /localization must be an IP address/);
   console.log('ok   tools/call robustness edges');
 
   if (process.argv.includes('--live')) {

@@ -71,7 +71,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--count <n>` | 结果条数 1–50，默认 10 |
 | `--need-content` | 让 API 直接返回正文（`content` 字段） |
 | `--ori-question <text>` | 触发搜索的原始问题，帮助理解意图（1–128 字符） |
-| `--localization <ip>` | 用该 IP 偏好本地化搜索结果 |
+| `--localization <ip>` | 用该 IPv4/IPv6 偏好本地化搜索结果（上游地理库为准，查询语言也会影响；代理会影响未传 IP 时的默认定位） |
 | `--fetch-top <n>` | 额外抓取前 n 条正文并附在结果后 |
 | `--json` | 输出结构化搜索结果（`query` / `count` / `results` / `fetched`） |
 | `--api-key <key>` | 覆盖 `DEEPSEEK_API_KEY` |
@@ -219,7 +219,7 @@ web-catch --mcp
 
 `search`：`query`、`count`、`needContent`、`oriQuestion`、`localization`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。`maxChars` 只作用于 `fetchTop` 抓取的每页，单页最多 20000 字符。
 
-`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。MCP 参数是严格 schema：拼错或不认识的参数会直接报 `Invalid arguments`，不会被静默忽略。`apiLang: "auto"` 优先用标题语言；标题太短无法判断时改用正文中占多数的语言，仍无法判断则不过滤（避免误删）。
+`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。MCP 参数是严格 schema（`additionalProperties: false`）：服务器会拒绝未知参数；但部分 MCP 客户端会在发送前丢弃未知字段，此时服务器收不到、调用仍会成功，这是客户端行为，不是服务端放宽。`apiLang: "auto"` 优先用标题语言；标题太短无法判断时改用正文中占多数的语言，仍无法判断则不过滤（避免误删）。
 
 `headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取；`raw` 与 `api` 传输不返回链接（`links: []`）。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
 
