@@ -236,6 +236,7 @@ try {
 
   const linksOnly = await tool('fetch', { url: article, linksOnly: true }, 3);
   assert.ok(!linksOnly.isError, linksOnly.text);
+  assert.ok(linksOnly.text.startsWith('## Page links'), 'linksOnly output has a leading separator');
   assert.match(linksOnly.text, /## Page links/);
   assert.ok(linksOnly.text.includes(`${base}/next`), 'linksOnly missed the resolved link');
   console.log('ok   tools/call fetch linksOnly');
@@ -245,7 +246,9 @@ try {
   const page = JSON.parse(structured.text);
   assert.equal(page.url, article);
   assert.equal(page.transport, 'http');
-  assert.ok(page.markdown.includes('Fixture article'));
+  assert.match(page.markdown, /^url: /);
+  assert.match(page.markdown, /headings: \d+/);
+  assert.ok(!page.markdown.includes('Paragraph text'), 'json outlineOnly leaked the full body');
   assert.deepEqual(page.links, []);
   assert.ok(Array.isArray(page.outline) && page.outline.length >= 1);
   console.log('ok   tools/call fetch json');

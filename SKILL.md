@@ -16,7 +16,7 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 | `mcp__webcatch__fetch` `{url, outlineOnly?, linksOnly?, links?, maxChars?, json?, raw?, via?, cache?, timeout?, retries?, userAgent?, headers?, cookieFile?, charset?}` | `web-catch <url> [--outline] [--links-only] [--no-links] [--max-chars N] [--json] [--raw] [--via api] [--cache] [--timeout S] [--retries N] [--user-agent U] [--header "K: V"] [--cookie-file F] [--charset C]` |
 | `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?, json?, timeout?, retries?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N] [--json]` |
 
-`linksOnly` / `outlineOnly` / `raw` 是互斥的输出模式；`json` 可与任一模式组合。`search.maxChars` 只作用于 `fetchTop`，单页最多 20000 字符。
+`linksOnly` / `outlineOnly` / `raw` 是互斥的输出模式；`json` 可与任一模式组合（`json` 只是序列化方式，内容仍由模式决定：`outlineOnly + json` 的 `markdown` 也是大纲文本）。`search.maxChars` 只作用于 `fetchTop`，单页最多 20000 字符。
 
 没有 MCP 工具时，在 Bash/PowerShell 里执行下面的命令（要求 `web-catch` 在 PATH，或 `node D:\web-catch\bin\cli.mjs`）。
 

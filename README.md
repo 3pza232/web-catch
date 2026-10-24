@@ -58,7 +58,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--no-cache` | 跳过缓存读取，但仍刷新缓存 |
 | `--url <url>` | 从 stdin 读 HTML，并用 `<url>` 作为页面 URL / 相对链接基准 |
 
-`--links-only`、`--outline`、`--raw` 互斥，组合使用会报用法错误（退出码 3）；`--json` 可与其中任意一个组合。
+`--links-only`、`--outline`、`--raw` 互斥，组合使用会报用法错误（退出码 3）；`--json` 可与其中任意一个组合。与 `--outline` 同用时，`json.markdown` 是大纲文本（与 Markdown 模式一致），全文仍会在 `outline` 之外被丢弃——需要全文就不要加 `--outline`。
 
 ### `web-catch search <query...>`
 
@@ -116,7 +116,7 @@ truncated: true (limit 60000 chars)
 }
 ```
 
-`extracted: false` 表示 Readability 没能识别正文，`markdown` 是整页可见文本（SPA 常见）。
+`extracted: false` 表示 Readability 没能识别正文，`markdown` 是整页可见文本（SPA 常见）。`--json --outline` 时 `markdown` 是大纲文本而非全文。
 
 ## 凭据解析（受管终端里也能用）
 
@@ -191,7 +191,7 @@ web-catch --mcp
 | `maxChars` | 正文输出上限，默认 `60000` |
 | `links` | 是否附带链接清单，默认 `true` |
 | `linksOnly` | 只返回链接清单（跳过正文抽取，用于页面侦察） |
-| `outlineOnly` | 只返回标题大纲 |
+| `outlineOnly` | 只返回标题大纲（`json` 模式下 `markdown` 同为大纲文本，另附 `outline[]`） |
 | `json` | 返回与 CLI `--json` 同构的结构化对象 |
 | `raw` | 跳过正文抽取，返回解码后的文本（仅 http） |
 | `via` | `http`（默认）或 `api` |
@@ -252,6 +252,7 @@ lib/constants.mjs   版本、默认值、退出码、内容类型
 
 - 不执行 JavaScript，SPA 需要应用自身渲染（或 `--via api` 由服务端处理）
 - 不自动绕过登录、验证码、付费墙；可用 `--cookie-file` / `--header` 携带凭据
+- `--via api` 返回的是 DeepSeek Fetch API 的原始 `content`：可能包含多语言译文，以及上游加的 Markdown 反斜杠转义（如 `\.`）；这是上游行为，工具不做二次解转义（避免破坏代码块里的反斜杠）
 - 搜索能力依赖外部 API（本工具不自建搜索引擎）
 
 ## 路线图

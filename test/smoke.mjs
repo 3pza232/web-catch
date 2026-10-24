@@ -11,7 +11,7 @@ import { createDom } from '../lib/extract/dom.mjs';
 import { extractArticle } from '../lib/extract/article.mjs';
 import { extractPage, fetchPage } from '../lib/page.mjs';
 import { outline, measure, normalize } from '../lib/text.mjs';
-import { truncate } from '../lib/render.mjs';
+import { renderLinks, renderPage, truncate } from '../lib/render.mjs';
 import { serializePage, serializeSearch } from '../lib/serialize.mjs';
 import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
@@ -137,6 +137,25 @@ test('render: truncate respects limit', () => {
   assert.equal(body.truncated, true);
   assert.ok(body.text.length <= 40);
   assert.equal(truncate('short', 40).truncated, false);
+});
+
+test('render: standalone links block has no leading separator', () => {
+  const links = [{ href: 'https://ex.com/a', text: 'a', context: '' }];
+  const block = renderLinks(links);
+  assert.ok(block.startsWith('## Page links (1)'), block.slice(0, 30));
+  assert.ok(!block.includes('---'));
+  const page = renderPage({
+    url: 'https://ex.com/',
+    finalUrl: 'https://ex.com/',
+    title: 't',
+    fetchedAt: '2026-10-24T00:00:00Z',
+    transport: 'http',
+    chars: 4,
+    words: 1,
+    markdown: 'body',
+    links,
+  }, true);
+  assert.match(page, /body\n\n---\n\n## Page links \(1\)/);
 });
 
 test('page: plain text passthrough', async () => {
@@ -361,6 +380,10 @@ test('serialize: page contract carries links and outline', async () => {
 
   const withoutLinks = serializePage(result, { noLinks: true });
   assert.deepEqual(withoutLinks.links, []);
+
+  const outlineJson = serializePage(result, { outline: true, markdown: '## only outline' });
+  assert.equal(outlineJson.markdown, '## only outline');
+  assert.ok(outlineJson.outline.length >= 1);
 });
 
 test('serialize: search contract keeps query, count and fetched pages', () => {
