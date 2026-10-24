@@ -271,6 +271,10 @@ try {
   const tools = list.result?.tools || [];
   const names = tools.map((tool_) => tool_.name).sort();
   assert.deepEqual(names, ['fetch', 'search']);
+  for (const tool_ of tools) {
+    assert.equal(tool_.annotations?.readOnlyHint, true, `${tool_.name} is not marked read-only`);
+    assert.equal(tool_.annotations?.openWorldHint, true, `${tool_.name} is not marked open-world`);
+  }
   console.log('ok   tools/list:', names.join(', '));
 
   const fetchProps = Object.keys(tools.find((tool_) => tool_.name === 'fetch').inputSchema.properties);

@@ -11,7 +11,7 @@ import { createDom } from '../lib/extract/dom.mjs';
 import { extractArticle } from '../lib/extract/article.mjs';
 import { extractPage, fetchPage } from '../lib/page.mjs';
 import { outline, measure, normalize, truncate } from '../lib/text.mjs';
-import { renderLinks, renderOutlineBody, renderPage } from '../lib/render.mjs';
+import { renderLinks, renderOutlineBody, renderPage, renderSearch } from '../lib/render.mjs';
 import { serializePage, serializeSearch } from '../lib/serialize.mjs';
 import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
@@ -148,6 +148,19 @@ test('render: outline body is plain Markdown headings', () => {
     { level: 3, title: 'Usage', chars: 42 },
   ]);
   assert.equal(body, '## Concepts (2182 chars)\n### Usage (42 chars)');
+});
+
+test('render: search prefers summary over snippet, falls back to snippet', () => {
+  const output = renderSearch({
+    query: 'q',
+    results: [
+      { title: 'A', url: 'https://a.example', snippet: 'shortteaser', summary: 'modelsummary' },
+      { title: 'B', url: 'https://b.example', snippet: 'onlysnippet' },
+    ],
+  });
+  assert.match(output, /modelsummary/);
+  assert.ok(!output.includes('shortteaser'));
+  assert.match(output, /onlysnippet/);
 });
 
 test('render: standalone links block has no leading separator', () => {

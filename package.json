@@ -1,6 +1,6 @@
 {
   "name": "web-catch",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Fetch web pages as clean Markdown, search the web, or serve both as an MCP server.",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node test/smoke.mjs",
+    "test:all": "node test/smoke.mjs && node test/mcp.mjs",
     "test:live": "node test/smoke.mjs --live",
     "test:mcp": "node test/mcp.mjs"
   },

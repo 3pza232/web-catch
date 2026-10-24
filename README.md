@@ -22,6 +22,8 @@ web-catch https://example.com
 npm run build       # 产出 web-catch.exe
 ```
 
+开发与测试：`npm test`（离线单测）、`npm run test:mcp`（MCP 协议套件）、`npm run test:all`（两者）；CI 配置见 `.github/workflows/ci.yml`（Ubuntu/Windows × Node 20/22）。
+
 ## 快速开始
 
 ```sh
@@ -78,6 +80,17 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--api-base <url>` | 覆盖 API 基址 |
 
 查询语法原样传给搜索服务：`site:github.com`、`-site:x.com`、`-word`、`"精确短语"`、`lang:zh,en`、`after:2025-01-01`、`before:2026`。
+
+搜索的人类可读输出只给每条结果一个摘要（有 `summary` 用 `summary`，否则用 `snippet`），避免同一信息占两份 token；`--json` 保留 API 返回的全部字段。
+
+## 给 agent 的调用建议
+
+1. 先用 `search`（`count` 3–10）筛 URL，再 `fetch` 需要精读的页面；不要一上来就批量抓正文。
+2. 大页面先 `outlineOnly` / `--outline` 判断值不值得读，再按 `maxChars` 读取。
+3. 只想要出口链接时用 `linksOnly` + `linkLimit`，跳过正文抽取。
+4. 需要程序消费用 `json`；同一 URL 反复抓用 `cache`；输出给模型时优先控制 `maxChars`。
+5. 登录态/反爬用 `cookieFile` / `headers`；直连被拦时用 `via: "api"`（上游内容约 2500 字符上限，多语内容可用 `apiLang` 过滤）。
+6. 搜索/抓取按成功请求计费，`count` 和 `fetchTop` 都会增加调用与费用，按需设置。
 
 ## 输出格式
 
