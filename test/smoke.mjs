@@ -165,6 +165,19 @@ test('config: file supplies the key when the environment is empty', () => {
   }
 });
 
+test('page: default maxChars applies when omitted', async () => {
+  const result = await extractPage({
+    url: 'https://ex.com/short.txt',
+    finalUrl: 'https://ex.com/short.txt',
+    contentType: 'text/plain',
+    bytes: new TextEncoder().encode('short body'),
+    transport: 'http',
+  });
+  assert.equal(typeof result.limit, 'number');
+  assert.equal(result.limit, 60_000);
+  assert.equal(result.truncated, false);
+});
+
 /** @returns {Promise<void>} */
 async function live() {
   const { fetchPage } = await import('../lib/page.mjs');

@@ -203,6 +203,8 @@ DSH 侧接入示例（profile 的 `cordis.patch.yml`）：
 
 工具名会呈现为 `mcp__webcatch__fetch` 与 `mcp__webcatch__search`。
 
+更新 MCP 服务的注意事项：宿主拉起的是 `web-catch.exe`，源码改动后必须 `npm run build` 重建，再让宿主重载该行（禁用→启用，或改动一个配置值）。运行中的 exe 会锁住文件，直接构建会报 `EPERM`，所以要先停用该行再构建。
+
 ## 架构
 
 ```text
