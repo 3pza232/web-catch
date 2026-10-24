@@ -9,11 +9,13 @@ import { detectCharset, decodeBytes } from '../lib/net/decode.mjs';
 import { normalizeLink, extractLinks } from '../lib/extract/links.mjs';
 import { createDom } from '../lib/extract/dom.mjs';
 import { extractArticle } from '../lib/extract/article.mjs';
-import { extractPage } from '../lib/page.mjs';
+import { extractPage, fetchPage } from '../lib/page.mjs';
 import { outline, measure, normalize } from '../lib/text.mjs';
 import { truncate } from '../lib/render.mjs';
+import { serializePage, serializeSearch } from '../lib/serialize.mjs';
 import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
+import { DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES } from '../lib/constants.mjs';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -56,6 +58,12 @@ test('parseArgs: short output flag and max-chars', () => {
 
 test('parseArgs: unknown flag rejects', () => {
   assert.throws(() => parseArgs(['--nope']), CliError);
+});
+
+test('parseArgs: --retries 0 disables retries, timeout stays positive', () => {
+  const parsed = parseArgs(['https://a.example', '--retries', '0']);
+  assert.equal(parsed.options.retries, 0);
+  assert.throws(() => parseArgs(['https://a.example', '--timeout', '0']), CliError);
 });
 
 test('decode: meta charset gbk detected', () => {
@@ -140,6 +148,93 @@ test('page: unsupported type rejects', async () => {
     }),
     (error) => error instanceof CliError && error.code === 'UNSUPPORTED_CONTENT_TYPE',
   );
+});
+
+/** @returns {object} HTML page input for extractPage. */
+function htmlPage() {
+  return {
+    url: 'https://ex.com/post',
+    finalUrl: 'https://ex.com/post',
+    contentType: 'text/html; charset=utf-8',
+    bytes: new TextEncoder().encode(ARTICLE_HTML),
+    transport: 'http',
+  };
+}
+
+test('page: linksOnly returns links and skips article extraction', async () => {
+  const result = await extractPage(htmlPage(), { linksOnly: true });
+  assert.equal(result.markdown, '');
+  assert.equal(result.chars, 0);
+  assert.ok(result.links.length >= 2, 'linksOnly returned no links');
+  assert.ok(result.links.every((link) => link.href.startsWith('https://')));
+});
+
+test('page: linksOnly implies links even with noLinks', async () => {
+  const result = await extractPage(htmlPage(), { linksOnly: true, noLinks: true });
+  assert.ok(result.links.length >= 2);
+});
+
+test('page: linksOnly rejects non-HTML bodies', async () => {
+  await assert.rejects(
+    extractPage({
+      url: 'https://ex.com/data.json',
+      finalUrl: 'https://ex.com/data.json',
+      contentType: 'application/json',
+      bytes: new TextEncoder().encode('{"ok":true}'),
+      transport: 'http',
+    }, { linksOnly: true }),
+    (error) => error instanceof CliError && error.code === 'LINKS_UNAVAILABLE',
+  );
+});
+
+test('page: linksOnly over the api transport is a usage error', async () => {
+  await assert.rejects(
+    fetchPage('https://ex.com/post', { via: 'api', linksOnly: true }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+});
+
+test('page: raw and linksOnly cannot be combined', async () => {
+  await assert.rejects(
+    extractPage(htmlPage(), { raw: true, linksOnly: true }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+});
+
+test('page: raw returns the decoded source instead of markdown', async () => {
+  const result = await extractPage(htmlPage(), { raw: true });
+  assert.match(result.markdown, /<article>/);
+  assert.match(result.markdown, /<h1>Fixture article<\/h1>/);
+});
+
+test('serialize: page contract carries links and outline', async () => {
+  const result = await extractPage(htmlPage());
+  const json = serializePage(result, { outline: true });
+  assert.equal(json.url, 'https://ex.com/post');
+  assert.equal(json.title, 'Fixture');
+  assert.ok(json.markdown.length > 0);
+  assert.ok(json.links.length >= 2);
+  assert.ok(json.outline.some((section) => section.title === 'Data'));
+  assert.equal(json.extracted, true);
+
+  const withoutLinks = serializePage(result, { noLinks: true });
+  assert.deepEqual(withoutLinks.links, []);
+});
+
+test('serialize: search contract keeps query, count and fetched pages', () => {
+  const json = serializeSearch({
+    query: 'q',
+    count: 2,
+    results: [{ url: 'https://a.example', title: 'A' }],
+    fetched: [{ url: 'https://a.example', title: 'A', markdown: 'body' }],
+  });
+  assert.deepEqual(Object.keys(json), ['query', 'count', 'results', 'fetched']);
+  assert.equal(json.count, 2);
+});
+
+test('constants: network defaults stay practical', () => {
+  assert.equal(DEFAULT_TIMEOUT_MS, 15_000);
+  assert.equal(DEFAULT_RETRIES, 2);
 });
 
 test('config: explicit key wins', () => {

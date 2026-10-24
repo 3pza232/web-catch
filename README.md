@@ -49,7 +49,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `-o, --output <file>` | 写入文件 |
 | `--via http\|api` | 传输方式：直连 HTTP（默认）或 DeepSeek Fetch API |
 | `--timeout <sec>` | 请求超时，默认 15（API 传输同样生效） |
-| `--retries <n>` | 网络错误与 408/429/5xx 的重试次数，默认 2 |
+| `--retries <n>` | 网络错误与 408/429/5xx 的重试次数，默认 2，`0` 关闭重试 |
 | `--user-agent <str>` | 覆盖 UA |
 | `--header "K: V"` | 附加请求头，可重复 |
 | `--cookie-file <file>` | Netscape 格式 cookie 文件（登录态页面） |
@@ -178,12 +178,31 @@ console.log(page.title, page.chars, page.markdown.slice(0, 200));
 web-catch --mcp
 ```
 
-以 stdio 暴露两个工具，任何支持 MCP 的宿主（DSH / Claude Code / Cursor 等）都能直接调用：
+以 stdio 暴露两个工具，任何支持 MCP 的宿主（DSH / Claude Code / Cursor 等）都能直接调用。抓取/输出相关参数与 CLI 对齐，agent 不必退回 shell：
 
-| 工具 | 参数 | 说明 |
-|---|---|---|
-| `fetch` | `url`、`maxChars`、`links`、`outlineOnly`、`via`、`cache` | 抓取一页，返回带元数据头的 Markdown |
-| `search` | `query`、`count`、`needContent`、`fetchTop`、`maxChars` | 搜索，可顺带抓取前 N 条正文 |
+`fetch`：
+
+| 参数 | 说明 |
+|---|---|
+| `url` | 绝对 http(s) URL |
+| `maxChars` | 正文输出上限，默认 `60000` |
+| `links` | 是否附带链接清单，默认 `true` |
+| `linksOnly` | 只返回链接清单（跳过正文抽取，用于页面侦察） |
+| `outlineOnly` | 只返回标题大纲 |
+| `json` | 返回与 CLI `--json` 同构的结构化对象 |
+| `raw` | 跳过正文抽取，返回解码后的文本（仅 http） |
+| `via` | `http`（默认）或 `api` |
+| `cache` | 条件请求缓存（仅 http） |
+| `timeout` | 请求超时秒数，默认 `15` |
+| `retries` | 重试次数，默认 `2`，`0` 表示不重试 |
+| `userAgent` | 覆盖 UA |
+| `headers` | 额外请求头数组，元素形如 `"Name: value"` |
+| `cookieFile` | Netscape cookie 文件路径（登录态页面） |
+| `charset` | 强制源编码（如 `gbk`） |
+
+`search`：`query`、`count`、`needContent`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。
+
+`headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
 
 stdout 只走 JSON-RPC，诊断信息走 stderr。凭据解析与 CLI 完全一致（含受管环境下的注册表回退）。
 
@@ -203,7 +222,7 @@ DSH 侧接入示例（profile 的 `cordis.patch.yml`）：
 
 工具名会呈现为 `mcp__webcatch__fetch` 与 `mcp__webcatch__search`。
 
-更新 MCP 服务的注意事项：宿主拉起的是 `web-catch.exe`，源码改动后必须 `npm run build` 重建，再让宿主重载该行（禁用→启用，或改动一个配置值）。运行中的 exe 会锁住文件，直接构建会报 `EPERM`，所以要先停用该行再构建。
+更新 MCP 服务的注意事项：宿主拉起的是 `web-catch.exe`，源码改动后必须重建，再让宿主重载该行（禁用→启用，或改动一个配置值）。运行中的 exe 会锁住文件，直接 `npm run build` 会报 `EPERM`，所以要先停用该行再构建。
 
 ## 架构
 
@@ -212,10 +231,11 @@ bin/cli.mjs         进程入口：异常 → 退出码
 lib/cli/            参数解析、帮助、命令分发
 lib/commands/       fetch 与 search 的命令级编排（解析入参 → 调 page → 渲染）
 lib/page.mjs        URL/HTML → 页面结果对象（网络 + 分派 + 抽取，无渲染）
-lib/mcp.mjs         MCP stdio 服务（复用 page / deepseek / render）
+lib/mcp.mjs         MCP stdio 服务（复用 page / deepseek / serialize / render）
 lib/net/            http（重试/超时/头/条件请求）、decode（编码探测）、deepseek（API 客户端）
 lib/extract/        dom / article（Readability + Turndown GFM）/ links / pdf
 lib/cache.mjs       条件请求缓存
+lib/serialize.mjs   页面/搜索结果 → 稳定的 JSON 契约（CLI --json 与 MCP json 共用）
 lib/render.mjs      Markdown / outline / links / search 渲染与截断
 lib/text.mjs        规范化、统计、大纲
 lib/constants.mjs   版本、默认值、退出码、内容类型

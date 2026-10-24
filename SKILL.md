@@ -13,18 +13,20 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 
 | MCP 工具 | 等价 CLI |
 |---|---|
-| `mcp__webcatch__fetch` `{url, outlineOnly?, links?, maxChars?, via?, cache?}` | `web-catch <url> [--outline] [--no-links] [--max-chars N] [--via api] [--cache]` |
-| `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N]` |
+| `mcp__webcatch__fetch` `{url, outlineOnly?, linksOnly?, links?, maxChars?, json?, raw?, via?, cache?, timeout?, retries?, userAgent?, headers?, cookieFile?, charset?}` | `web-catch <url> [--outline] [--links-only] [--no-links] [--max-chars N] [--json] [--raw] [--via api] [--cache] [--timeout S] [--retries N] [--user-agent U] [--header "K: V"] [--cookie-file F] [--charset C]` |
+| `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?, json?, timeout?, retries?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N] [--json]` |
 
 没有 MCP 工具时，在 Bash/PowerShell 里执行下面的命令（要求 `web-catch` 在 PATH，或 `node D:\web-catch\bin\cli.mjs`）。
 
 ## 何时用
 
 - 用户给出 URL，需要正文/细节
-- 需要判断一个页面值不值得读（`--outline`）
-- 需要页面的出口链接、想继续深挖（`--links-only`）
+- 需要判断一个页面值不值得读（`--outline` / `outlineOnly`）
+- 需要页面的出口链接、想继续深挖（`--links-only` / `linksOnly`，跳过正文抽取直接拿链接）
 - 需要抓 PDF 或 JSON/XML（自动分派，`--raw` 兜底）
 - 需要"先搜后读"，且已配置 `DEEPSEEK_API_KEY`
+- 网络抖动：用 `timeout` / `retries`；登录态或反爬页面：用 `cookieFile` / `headers`（`cookieFile`、`headers`、`cache`、`raw` 仅 http 传输）
+- 要给程序/AI 消费而不是人读：用 `json`（MCP）或 `--json`（CLI），字段一致
 
 ## 命令速查
 
@@ -73,5 +75,5 @@ pages: N                        → PDF 页数
 - **凭据**：在 DSH 等受管 shell 里不需要手动 `export`；CLI 会依次读环境变量 → `~/.web-catch/config.json` → Windows 用户环境变量（注册表）。仍报 401 时检查 key 是否有效、账户是否有余额。
 - **搜索要花钱**：Search/Fetch 按成功请求计费（约 5 元 / 1000 次），别用它做无目的试探；`--json` 一次拿全，避免重复调用。
 - **中文编码**已处理（GBK/GB2312 自动转 gb18030），不需要手工转码。
-- **不要**用它抓需要人机验证、付费墙的页面来绕过限制；有正当凭据时用 `--cookie-file` / `--header`。
+- **不要**用它抓需要人机验证、付费墙的页面来绕过限制；有正当凭据时用 `--cookie-file` / `--header`（MCP：`cookieFile` / `headers`）。
 - 需要长期复用同一页面时加 `--cache`，避免重复计费与重复抓取。
