@@ -16,6 +16,8 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 | `mcp__webcatch__fetch` `{url, outlineOnly?, linksOnly?, links?, maxChars?, json?, raw?, via?, cache?, timeout?, retries?, userAgent?, headers?, cookieFile?, charset?}` | `web-catch <url> [--outline] [--links-only] [--no-links] [--max-chars N] [--json] [--raw] [--via api] [--cache] [--timeout S] [--retries N] [--user-agent U] [--header "K: V"] [--cookie-file F] [--charset C]` |
 | `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?, json?, timeout?, retries?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N] [--json]` |
 
+`linksOnly` / `outlineOnly` / `raw` 是互斥的输出模式；`json` 可与任一模式组合。`search.maxChars` 只作用于 `fetchTop`，单页最多 20000 字符。
+
 没有 MCP 工具时，在 Bash/PowerShell 里执行下面的命令（要求 `web-catch` 在 PATH，或 `node D:\web-catch\bin\cli.mjs`）。
 
 ## 何时用
@@ -66,7 +68,7 @@ pages: N                        → PDF 页数
 | 0 | 成功 | — |
 | 1 | 网络 / HTTP 错误 | 换 `--timeout` / `--retries`，或核对 URL |
 | 2 | 无可用正文 / 不支持的类型 | 试 `--raw`、`--via api`，或如实告诉用户 |
-| 3 | 参数错误 | 检查命令拼写 |
+| 3 | 参数/输出路径错误 | 检查命令拼写或 `-o` 目标目录 |
 | 4 | 上游 API 错误 | 401 缺 key、402 余额、429 限流；不要盲目重试 |
 
 ## 注意事项

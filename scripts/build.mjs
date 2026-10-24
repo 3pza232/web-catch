@@ -17,6 +17,15 @@ function cleanStaleArtifacts() {
 
 cleanStaleArtifacts();
 
+// A missing Bun exits through the shell as status 1, so probe it first and
+// report the real problem instead of blaming a locked executable.
+const probe = spawnSync('bun --version', { shell: true, stdio: 'ignore' });
+if (probe.error || probe.status !== 0) {
+  process.stderr.write('build failed: Bun is not installed or not on PATH\n');
+  process.stderr.write('install Bun first: https://bun.sh\n');
+  process.exit(1);
+}
+
 const result = spawnSync('bun', [
   'build',
   '--compile',

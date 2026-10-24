@@ -19,6 +19,7 @@ const ARTICLE_HTML = `<!doctype html><html><head><title>Fixture</title></head><b
 </article></body></html>`;
 
 let flakyHits = 0;
+let badJsonHits = 0;
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<any>} */
 async function readJson(req) {
@@ -40,6 +41,17 @@ const server = createServer(async (req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ results: [] }));
       }, 300);
+      return;
+    }
+    if (body.query === 'bad-shape') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ results: 'nope' }));
+      return;
+    }
+    if (body.query === 'bad-json') {
+      badJsonHits++;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('not json at all');
       return;
     }
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -66,6 +78,23 @@ const server = createServer(async (req, res) => {
     res.end(`<!doctype html><html><head><title>Long</title></head><body><article><h1>Long article</h1><p>${
       'Long article body sentence. '.repeat(1500)
     }</p></article></body></html>`);
+    return;
+  }
+  if (pathname === '/comment-html') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(`<!--leading comment--><html><head><title>Comment page</title></head><body><article><h1>Comment page</h1><p>${
+      'Comment page body text. '.repeat(20)
+    }</p></article></body></html>`);
+    return;
+  }
+  if (pathname === '/etag') {
+    if (req.headers['if-none-match'] === '"v1"') {
+      res.writeHead(304, { etag: '"v1"' });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', etag: '"v1"' });
+    res.end(ARTICLE_HTML);
     return;
   }
   if (pathname === '/echo') {
@@ -104,15 +133,21 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 const cookieFile = join(mkdtempSync(join(tmpdir(), 'web-catch-mcp-')), 'cookies.txt');
-writeFileSync(cookieFile, '127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tabc123\n');
+writeFileSync(cookieFile, [
+  '#HttpOnly_127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tabc123',
+  'evil.example\tFALSE\t/\tFALSE\t0\ttoken\tsecret',
+].join('\n'));
 
+// WEB_CATCH_TEST_CACHE lets sandboxed environments point the cache at a
+// writable path; normal runs use a fresh temp directory.
+const cacheRoot = process.env.WEB_CATCH_TEST_CACHE || mkdtempSync(join(tmpdir(), 'web-catch-mcp-cache-'));
 const liveMode = process.argv.includes('--live');
 const useExe = process.argv.includes('--exe') || Boolean(process.env.WEB_CATCH_EXE);
 const exePath = process.env.WEB_CATCH_EXE || 'web-catch.exe';
 // Offline runs point the API client at the local fixture; --live must reach the real API.
 const childEnv = liveMode
-  ? { ...process.env }
-  : { ...process.env, DEEPSEEK_API_KEY: 'test-key', DEEPSEEK_BASE_URL: base };
+  ? { ...process.env, WEB_CATCH_CACHE: cacheRoot }
+  : { ...process.env, WEB_CATCH_CACHE: cacheRoot, DEEPSEEK_API_KEY: 'test-key', DEEPSEEK_BASE_URL: base };
 const child = useExe
   ? spawn(exePath, ['--mcp'], { stdio: ['pipe', 'pipe', 'inherit'], env: childEnv })
   : spawn(process.execPath, ['bin/cli.mjs', '--mcp'], { stdio: ['pipe', 'pipe', 'inherit'], env: childEnv });
@@ -229,14 +264,16 @@ try {
   const echo = await tool('fetch', {
     url: `${base}/echo`,
     json: true,
-    headers: ['X-Test: hello', 'Referer: https://ref.example'],
+    headers: ['X-Test: hello', 'Referer: https://ref.example', 'user-agent: custom-agent/1.0'],
     cookieFile,
   }, 7);
   assert.ok(!echo.isError, echo.text);
   const seen = JSON.parse(JSON.parse(echo.text).markdown);
   assert.equal(seen.headers['x-test'], 'hello');
   assert.equal(seen.headers.referer, 'https://ref.example');
+  assert.equal(seen.headers['user-agent'], 'custom-agent/1.0', 'lower-case header override failed');
   assert.match(seen.headers.cookie || '', /session=abc123/);
+  assert.ok(!(seen.headers.cookie || '').includes('secret'), 'cookie from another domain leaked');
   console.log('ok   tools/call fetch headers + cookieFile');
 
   const timeout = await tool('fetch', { url: `${base}/slow`, timeout: 0.15, retries: 0 }, 8);
@@ -270,7 +307,9 @@ try {
   assert.equal(payload.fetched.length, 1);
   assert.ok(payload.fetched[0].url.endsWith('/long'), 'fetchTop used the wrong result');
   assert.ok(payload.fetched[0].markdown.includes('Long article body'));
-  assert.ok(payload.fetched[0].markdown.length <= 20_000, 'fetchTop budget was not capped');
+  assert.match(payload.fetched[0].markdown, /\(truncated at 20000 chars\)/);
+  const unmarked = payload.fetched[0].markdown.replace(/\n\n\(truncated at \d+ chars\)$/, '');
+  assert.ok(unmarked.length <= 20_000, 'fetchTop budget was not capped');
 
   const searchHuman = await tool('search', { query: 'fixture', count: 2 }, 13);
   assert.ok(!searchHuman.isError, searchHuman.text);
@@ -296,6 +335,52 @@ try {
   assert.ok(conflict.isError, 'raw + linksOnly was not rejected');
   assert.match(conflict.text, /cannot be combined/);
   console.log('ok   tools/call search + api transport');
+
+  const comment = await tool('fetch', { url: `${base}/comment-html` }, 18);
+  assert.ok(!comment.isError, comment.text);
+  assert.match(comment.text, /Comment page body text/);
+  assert.ok(!comment.text.includes('<html'), 'parameterized HTML content-type leaked raw source');
+
+  const conditional = await tool('fetch', {
+    url: `${base}/etag`, headers: ['If-None-Match: "v1"'], retries: 0,
+  }, 19);
+  assert.ok(conditional.isError, '304 without a cached copy was not reported');
+  assert.match(conditional.text, /304/);
+  assert.match(conditional.text, /cache/i);
+
+  const cacheFirst = await tool('fetch', { url: `${base}/etag`, cache: true }, 20);
+  assert.ok(!cacheFirst.isError, cacheFirst.text);
+  const cacheSecond = await tool('fetch', { url: `${base}/etag`, cache: true }, 21);
+  assert.ok(!cacheSecond.isError, cacheSecond.text);
+  assert.match(cacheSecond.text, /cached: true/);
+
+  const badCharset = await tool('fetch', { url: article, charset: 'definitely-not-a-charset' }, 22);
+  assert.ok(badCharset.isError, 'invalid charset was not rejected');
+  assert.match(badCharset.text, /unknown charset/);
+
+  const ftpUrl = await tool('fetch', { url: 'ftp://example.com/x' }, 23);
+  assert.ok(ftpUrl.isError, 'non-http URL was not rejected');
+  assert.match(ftpUrl.text, /only http\(s\) URLs/);
+
+  const rawOutline = await tool('fetch', { url: article, raw: true, outlineOnly: true }, 24);
+  assert.ok(rawOutline.isError, 'raw + outlineOnly was not rejected');
+  assert.match(rawOutline.text, /cannot be combined/);
+  const linksOutline = await tool('fetch', { url: article, linksOnly: true, outlineOnly: true }, 25);
+  assert.ok(linksOutline.isError, 'linksOnly + outlineOnly was not rejected');
+  assert.match(linksOutline.text, /cannot be combined/);
+
+  const badShape = await tool('search', { query: 'bad-shape', retries: 0 }, 26);
+  assert.ok(badShape.isError, 'malformed upstream search payload was not reported');
+  assert.match(badShape.text, /unexpected response shape|results/i);
+
+  const badJson = await tool('search', { query: 'bad-json', retries: 2 }, 27);
+  assert.ok(badJson.isError, 'malformed JSON body was not reported');
+  assert.equal(badJsonHits, 1, 'malformed JSON must not be retried');
+
+  const emptyQuery = await tool('search', { query: '   ' }, 28);
+  assert.ok(emptyQuery.isError, 'empty search query was not rejected');
+  assert.match(emptyQuery.text, /search query is required/);
+  console.log('ok   tools/call robustness edges');
 
   if (process.argv.includes('--live')) {
     const live = await tool('fetch', { url: 'https://example.com', maxChars: 500 }, 20);

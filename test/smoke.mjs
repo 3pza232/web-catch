@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Offline smoke tests; pass --live to also hit the network. */
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from '../lib/cli/args.mjs';
@@ -15,6 +15,8 @@ import { truncate } from '../lib/render.mjs';
 import { serializePage, serializeSearch } from '../lib/serialize.mjs';
 import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
+import { parseHeaders, readCookieFile } from '../lib/net/http.mjs';
+import { readCache, writeCache, cacheRoot, keyOf } from '../lib/cache.mjs';
 import { DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES } from '../lib/constants.mjs';
 
 const tests = [];
@@ -64,6 +66,17 @@ test('parseArgs: --retries 0 disables retries, timeout stays positive', () => {
   const parsed = parseArgs(['https://a.example', '--retries', '0']);
   assert.equal(parsed.options.retries, 0);
   assert.throws(() => parseArgs(['https://a.example', '--timeout', '0']), CliError);
+});
+
+test('parseArgs: fractional timeout accepted, upper bounds enforced', () => {
+  assert.equal(parseArgs(['https://a.example', '--timeout', '0.5']).options.timeout, 0.5);
+  assert.throws(() => parseArgs(['https://a.example', '--timeout', '601']), CliError);
+  assert.throws(() => parseArgs(['https://a.example', '--retries', '11']), CliError);
+});
+
+test('headers: line breaks are rejected', () => {
+  assert.throws(() => parseHeaders(['X-Test: a\nb']), (error) => error.code === 'USAGE');
+  assert.equal(parseHeaders(['X-Test: a'])['X-Test'], 'a');
 });
 
 test('decode: meta charset gbk detected', () => {
@@ -187,6 +200,64 @@ test('page: linksOnly rejects non-HTML bodies', async () => {
   );
 });
 
+test('page: content-type parameters do not defeat HTML dispatch', async () => {
+  const html = `<!--leading comment--><html><head><title>Param</title></head><body><article><h1>T</h1><p>${
+    'dispatch text '.repeat(60)
+  }</p></article></body></html>`;
+  const result = await extractPage({
+    url: 'https://ex.com/param',
+    finalUrl: 'https://ex.com/param',
+    contentType: 'text/html; charset=utf-8',
+    bytes: new TextEncoder().encode(html),
+    transport: 'http',
+  });
+  assert.equal(result.title, 'Param');
+  assert.match(result.markdown, /dispatch text/);
+  assert.ok(!result.markdown.includes('<html'), 'HTML leaked through as raw text');
+});
+
+test('page: xhtml with charset params is extracted, not passed through', async () => {
+  const html = `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Xhtml</title></head><body><article><h1>T</h1><p>${
+    'xhtml body text '.repeat(60)
+  }</p></article></body></html>`;
+  const result = await extractPage({
+    url: 'https://ex.com/x.xhtml',
+    finalUrl: 'https://ex.com/x.xhtml',
+    contentType: 'application/xhtml+xml; charset=utf-8',
+    bytes: new TextEncoder().encode(html),
+    transport: 'http',
+  });
+  assert.equal(result.title, 'Xhtml');
+  assert.ok(!result.markdown.includes('<html'), 'XHTML leaked through as raw text');
+});
+
+test('page: corrupt pdf maps to extraction error', async () => {
+  await assert.rejects(
+    extractPage({
+      url: 'https://ex.com/bad.pdf',
+      finalUrl: 'https://ex.com/bad.pdf',
+      contentType: 'application/pdf; charset=binary',
+      bytes: new TextEncoder().encode('%PDF-1.4 definitely not a pdf'),
+      transport: 'http',
+    }),
+    (error) => error instanceof CliError && error.code === 'EXTRACT_PDF' && error.exit === 2,
+  );
+});
+
+test('page: invalid explicit charset is a usage error', async () => {
+  await assert.rejects(
+    fetchPage('https://ex.com/page', { charset: 'definitely-not-a-charset' }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+});
+
+test('page: non-http url is a usage error', async () => {
+  await assert.rejects(
+    fetchPage('ftp://example.com/x'),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+});
+
 test('page: linksOnly over the api transport is a usage error', async () => {
   await assert.rejects(
     fetchPage('https://ex.com/post', { via: 'api', linksOnly: true }),
@@ -199,6 +270,77 @@ test('page: raw and linksOnly cannot be combined', async () => {
     extractPage(htmlPage(), { raw: true, linksOnly: true }),
     (error) => error instanceof CliError && error.code === 'USAGE',
   );
+});
+
+test('page: conflicting output modes all reject', async () => {
+  await assert.rejects(
+    extractPage(htmlPage(), { raw: true, outlineOnly: true }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+  await assert.rejects(
+    extractPage(htmlPage(), { linksOnly: true, outlineOnly: true }),
+    (error) => error instanceof CliError && error.code === 'USAGE',
+  );
+});
+
+test('page: empty html is a clean extraction error, not a crash', async () => {
+  for (const body of ['', '   \n  ']) {
+    await assert.rejects(
+      extractPage({
+        url: 'https://ex.com/empty',
+        finalUrl: 'https://ex.com/empty',
+        contentType: 'text/html; charset=utf-8',
+        bytes: new TextEncoder().encode(body),
+        transport: 'http',
+      }),
+      (error) => error instanceof CliError && error.code === 'EXTRACT_EMPTY',
+    );
+  }
+});
+
+test('page: fetchedAt carries an explicit UTC marker', async () => {
+  const result = await extractPage(htmlPage());
+  assert.match(result.fetchedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+});
+
+test('cookies: HttpOnly lines parse, cookies are host/path/secure scoped', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'web-catch-cookie-')), 'cookies.txt');
+  writeFileSync(file, [
+    '#HttpOnly_127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tabc123',
+    '.example.com\tFALSE\t/\tFALSE\t0\thostonly\tyes',
+    'api.example.com\tFALSE\t/api\tTRUE\t0\tscoped\tsecret',
+    'other.example\tFALSE\t/\tFALSE\t0\tleak\tno',
+  ].join('\n'));
+  assert.equal(await readCookieFile(file, 'http://127.0.0.1/'), 'session=abc123');
+  assert.equal(await readCookieFile(file, 'https://api.example.com/api/x'), 'hostonly=yes; scoped=secret');
+  assert.equal(await readCookieFile(file, 'https://api.example.com/other'), 'hostonly=yes');
+  await assert.rejects(readCookieFile(file, 'https://nothing.invalid/'),
+    (error) => error instanceof CliError && error.code === 'USAGE');
+});
+
+test('cache: corrupt metadata ignored, entries identity-scoped', async () => {
+  const saved = process.env.WEB_CATCH_CACHE;
+  process.env.WEB_CATCH_CACHE = mkdtempSync(join(tmpdir(), 'web-catch-cache-'));
+  try {
+    const url = 'https://ex.com/cached';
+    const bytes = new TextEncoder().encode('<html>cached</html>');
+    await writeCache(url, 'cookie:a=1', { etag: '"v1"', contentType: 'text/html' }, bytes);
+    const hit = await readCache(url, 'cookie:a=1');
+    assert.equal(Buffer.from(hit.bytes).toString(), '<html>cached</html>');
+    assert.equal(await readCache(url, 'cookie:a=2'), null);
+
+    mkdirSync(cacheRoot(), { recursive: true });
+    writeFileSync(join(cacheRoot(), `${keyOf(url, 'broken')}.json`),
+      JSON.stringify({ etag: 'bad\nvalue', contentType: 'text/html' }));
+    writeFileSync(join(cacheRoot(), `${keyOf(url, 'broken')}.body`), bytes);
+    assert.equal(await readCache(url, 'broken'), null);
+
+    await writeCache(url, 'novalidator', {}, bytes);
+    assert.equal(await readCache(url, 'novalidator'), null);
+  } finally {
+    if (saved === undefined) delete process.env.WEB_CATCH_CACHE;
+    else process.env.WEB_CATCH_CACHE = saved;
+  }
 });
 
 test('page: raw returns the decoded source instead of markdown', async () => {

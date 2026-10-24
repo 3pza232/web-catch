@@ -1,6 +1,6 @@
 # web-catch
 
-把网页变成干净的 Markdown，或者直接搜索网页——一个可脚本化、给 agent 用的单文件 CLI。
+把网页变成干净的 Markdown，或者直接搜索网页——一个可脚本化、给 agent 用的 CLI（可编译成单文件可执行程序）。
 
 - **抓取**：Readability 抽取正文 + GFM 表格 + 代码块，附页面链接清单（带上下文）
 - **搜索**：接 DeepSeek Search API，可 `--fetch-top` 直接抓取前 N 条正文，搜索与阅读闭环
@@ -56,6 +56,9 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--charset <label>` | 强制源编码（如 `gbk`、`shift_jis`） |
 | `--cache` | 开启条件请求缓存（ETag / Last-Modified） |
 | `--no-cache` | 跳过缓存读取，但仍刷新缓存 |
+| `--url <url>` | 从 stdin 读 HTML，并用 `<url>` 作为页面 URL / 相对链接基准 |
+
+`--links-only`、`--outline`、`--raw` 互斥，组合使用会报用法错误（退出码 3）；`--json` 可与其中任意一个组合。
 
 ### `web-catch search <query...>`
 
@@ -64,7 +67,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--count <n>` | 结果条数 1–50，默认 10 |
 | `--need-content` | 让 API 直接返回正文（`content` 字段） |
 | `--fetch-top <n>` | 额外抓取前 n 条正文并附在结果后 |
-| `--json` | 输出原始 API 载荷 |
+| `--json` | 输出结构化搜索结果（`query` / `count` / `results` / `fetched`） |
 | `--api-key <key>` | 覆盖 `DEEPSEEK_API_KEY` |
 | `--api-base <url>` | 覆盖 API 基址 |
 
@@ -77,7 +80,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 ```text
 url: https://example.com/post
 title: 页面标题
-fetched: 2026-10-24 07:00:00
+fetched: 2026-10-24T07:00:00Z
 transport: http
 chars: 5321 (words 812)
 status: 200
@@ -91,7 +94,7 @@ truncated: true (limit 60000 chars)
    - context: 链接周围的文字片段
 ```
 
-`--json` 的字段：
+`--json` 的字段（`pages` 仅 PDF 出现，`status` 在 api/stdin 下缺省，`outline` 仅在 `--outline` 时出现，`extractedReason` 仅在提取降级时出现）：
 
 ```json
 {
@@ -99,7 +102,7 @@ truncated: true (limit 60000 chars)
   "title": "…",
   "status": 200,
   "transport": "http",
-  "fetchedAt": "2026-10-24 07:00:00",
+  "fetchedAt": "2026-10-24T07:00:00Z",
   "cached": false,
   "extracted": true,
   "chars": 5321,
@@ -149,7 +152,7 @@ DSH 等 harness 在 spawn 子进程前会剥离名字含 `KEY|PASSWORD|SECRET|TO
 
 ## 缓存
 
-`--cache` 会保存响应体与 `ETag` / `Last-Modified`，下次请求发条件头；`304` 时直接复用本地副本并在输出标记 `cached: true`。缓存位置 `$WEB_CATCH_CACHE` 或 `~/.cache/web-catch`。
+`--cache` 会保存响应体与 `ETag` / `Last-Modified`，下次请求发条件头；`304` 时直接复用本地副本并在输出标记 `cached: true`。缓存按 URL + 凭据上下文（cookie / 自定义头 / UA / charset）分键，避免把登录态内容复用给另一个凭据；缓存文件是明文，敏感页面请自行控制 `$WEB_CATCH_CACHE` 目录权限。位置 `$WEB_CATCH_CACHE` 或 `~/.cache/web-catch`。
 
 ## 退出码
 
@@ -158,7 +161,7 @@ DSH 等 harness 在 spawn 子进程前会剥离名字含 `KEY|PASSWORD|SECRET|TO
 | 0 | 成功 |
 | 1 | 网络 / HTTP 错误 |
 | 2 | 提取失败（无可用正文、不支持的内容类型） |
-| 3 | 参数错误 |
+| 3 | 参数或输出路径错误 |
 | 4 | 上游 API 错误（鉴权、余额、限流等） |
 
 ## 作为库使用
@@ -170,7 +173,7 @@ const page = await fetchPage('https://example.com', { maxChars: 20_000, cache: t
 console.log(page.title, page.chars, page.markdown.slice(0, 200));
 ```
 
-`fetchPage` 返回与 `--json` 同构的对象，不打印任何内容。
+`fetchPage` 返回底层页面结果对象（含 `finalUrl`、`reason`、`stats` 等内部字段），`--json` 是它的稳定序列化投影（字段见上），两者不完全相同。
 
 ## MCP 模式
 
@@ -200,9 +203,11 @@ web-catch --mcp
 | `cookieFile` | Netscape cookie 文件路径（登录态页面） |
 | `charset` | 强制源编码（如 `gbk`） |
 
-`search`：`query`、`count`、`needContent`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。
+`search`：`query`、`count`、`needContent`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。`maxChars` 只作用于 `fetchTop` 抓取的每页，单页最多 20000 字符。
 
-`headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
+`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。
+
+`headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取；`raw` 与 `api` 传输不返回链接（`links: []`）。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
 
 stdout 只走 JSON-RPC，诊断信息走 stderr。凭据解析与 CLI 完全一致（含受管环境下的注册表回退）。
 
