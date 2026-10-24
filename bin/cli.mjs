@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { run } from '../lib/cli/run.mjs';
 import { CliError } from '../lib/errors.mjs';
 
 // A closed downstream pipe (`web-catch ... | head`) is not an error.
@@ -8,8 +7,24 @@ process.stdout.on('error', (error) => {
   throw error;
 });
 
+const argv = process.argv.slice(2);
+
+// Fast paths avoid loading the extraction stack for flag-only invocations.
+if (argv.includes('--version') || argv.includes('-v')) {
+  const { VERSION } = await import('../lib/constants.mjs');
+  process.stdout.write(`${VERSION}\n`);
+  process.exit(0);
+}
+if (argv.includes('--help') || argv.includes('-h')) {
+  const { HELP } = await import('../lib/cli/help.mjs');
+  process.stdout.write(HELP);
+  process.exit(0);
+}
+
+const { run } = await import('../lib/cli/run.mjs');
+
 try {
-  await run(process.argv.slice(2));
+  await run(argv);
 } catch (error) {
   if (error instanceof CliError) {
     process.stderr.write(`error: ${error.message}\n`);
