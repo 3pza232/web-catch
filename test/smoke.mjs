@@ -293,6 +293,26 @@ test('page: corrupt pdf maps to extraction error', async () => {
   );
 });
 
+test('page: pdf on an unsupported runtime reports a clear error', async () => {
+  if (Object.getOwnPropertyDescriptor(globalThis, 'Iterator')?.configurable !== true) return;
+  const saved = globalThis.Iterator;
+  try {
+    delete globalThis.Iterator;
+    await assert.rejects(
+      extractPage({
+        url: 'https://ex.com/x.pdf',
+        finalUrl: 'https://ex.com/x.pdf',
+        contentType: 'application/pdf',
+        bytes: new TextEncoder().encode('%PDF-1.4'),
+        transport: 'http',
+      }),
+      (error) => error instanceof CliError && error.code === 'UNSUPPORTED_RUNTIME',
+    );
+  } finally {
+    globalThis.Iterator = saved;
+  }
+});
+
 test('page: invalid explicit charset is a usage error', async () => {
   await assert.rejects(
     fetchPage('https://ex.com/page', { charset: 'definitely-not-a-charset' }),

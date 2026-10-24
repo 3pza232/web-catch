@@ -11,7 +11,7 @@
 ## 安装
 
 ```sh
-# 直接跑源码（Node ≥ 20）
+# 直接跑源码（Node ≥ 22；PDF 解析依赖的 unpdf 要求 Node 22）
 node bin/cli.mjs https://example.com
 
 # 或注册为全局命令
@@ -22,7 +22,7 @@ web-catch https://example.com
 npm run build       # 产出 web-catch.exe
 ```
 
-开发与测试：`npm test`（离线单测）、`npm run test:mcp`（MCP 协议套件）、`npm run test:all`（两者）；CI 配置见 `.github/workflows/ci.yml`（Ubuntu/Windows × Node 20/22）。
+开发与测试：`npm test`（离线单测）、`npm run test:mcp`（MCP 协议套件）、`npm run test:all`（两者）；CI 配置见 `.github/workflows/ci.yml`（Ubuntu/Windows × Node 22/24）。
 
 ## 快速开始
 
