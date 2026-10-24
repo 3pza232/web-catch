@@ -172,6 +172,37 @@ console.log(page.title, page.chars, page.markdown.slice(0, 200));
 
 `fetchPage` 返回与 `--json` 同构的对象，不打印任何内容。
 
+## MCP 模式
+
+```sh
+web-catch --mcp
+```
+
+以 stdio 暴露两个工具，任何支持 MCP 的宿主（DSH / Claude Code / Cursor 等）都能直接调用：
+
+| 工具 | 参数 | 说明 |
+|---|---|---|
+| `fetch` | `url`、`maxChars`、`links`、`outlineOnly`、`via`、`cache` | 抓取一页，返回带元数据头的 Markdown |
+| `search` | `query`、`count`、`needContent`、`fetchTop`、`maxChars` | 搜索，可顺带抓取前 N 条正文 |
+
+stdout 只走 JSON-RPC，诊断信息走 stderr。凭据解析与 CLI 完全一致（含受管环境下的注册表回退）。
+
+DSH 侧接入示例（profile 的 `cordis.patch.yml`）：
+
+```yaml
+- insert:
+    - id: mcp-webcatch
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: webcatch
+        transport: stdio
+        command: 'D:\web-catch\web-catch.exe'
+        args: ['--mcp']
+        toolCallTimeoutMs: 120000
+```
+
+工具名会呈现为 `mcp__webcatch__fetch` 与 `mcp__webcatch__search`。
+
 ## 架构
 
 ```text
@@ -179,6 +210,7 @@ bin/cli.mjs         进程入口：异常 → 退出码
 lib/cli/            参数解析、帮助、命令分发
 lib/commands/       fetch 与 search 的命令级编排（解析入参 → 调 page → 渲染）
 lib/page.mjs        URL/HTML → 页面结果对象（网络 + 分派 + 抽取，无渲染）
+lib/mcp.mjs         MCP stdio 服务（复用 page / deepseek / render）
 lib/net/            http（重试/超时/头/条件请求）、decode（编码探测）、deepseek（API 客户端）
 lib/extract/        dom / article（Readability + Turndown GFM）/ links / pdf
 lib/cache.mjs       条件请求缓存
@@ -200,7 +232,6 @@ lib/constants.mjs   版本、默认值、退出码、内容类型
 - 站点适配器（GitHub / 微信 / 知乎 / Reddit / Hacker News / arXiv）
 - 批量抓取 `--batch urls.txt --concurrency N`
 - 同一 URL 两次抓取的 `--diff`
-- MCP 服务模式（`web-catch --mcp`），供任意 agent harness 使用
 - 搜索后端插件化（SearXNG / Brave）
 
 ## 许可
