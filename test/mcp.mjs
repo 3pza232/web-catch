@@ -197,6 +197,9 @@ function call(method, params, id) {
  */
 async function tool(name, args, id) {
   const response = await call('tools/call', { name, arguments: args }, id);
+  if (response.error) {
+    return { text: response.error.message || '', isError: true, protocolError: true };
+  }
   return {
     text: response.result?.content?.[0]?.text || '',
     isError: Boolean(response.result?.isError),
@@ -222,8 +225,8 @@ try {
 
   const fetchProps = Object.keys(tools.find((tool_) => tool_.name === 'fetch').inputSchema.properties);
   const expectedFetch = [
-    'url', 'maxChars', 'links', 'linksOnly', 'outlineOnly', 'json', 'raw', 'via', 'cache',
-    'timeout', 'retries', 'userAgent', 'headers', 'cookieFile', 'charset',
+    'url', 'maxChars', 'links', 'linkLimit', 'linksOnly', 'outlineOnly', 'json', 'raw', 'via', 'cache',
+    'noCache', 'timeout', 'retries', 'userAgent', 'headers', 'cookieFile', 'charset',
   ];
   assert.deepEqual(fetchProps.sort(), expectedFetch.sort());
   const searchProps = Object.keys(tools.find((tool_) => tool_.name === 'search').inputSchema.properties);
@@ -383,6 +386,27 @@ try {
   const emptyQuery = await tool('search', { query: '   ' }, 28);
   assert.ok(emptyQuery.isError, 'empty search query was not rejected');
   assert.match(emptyQuery.text, /search query is required/);
+
+  const unknownParam = await tool('fetch', { url: article, maxchars: 100 }, 29);
+  assert.ok(unknownParam.isError, 'unknown fetch parameter was not rejected');
+  assert.match(unknownParam.text, /unrecognized|additional propert/i);
+  const unknownSearchParam = await tool('search', { query: 'fixture', fetch_top: 1 }, 30);
+  assert.ok(unknownSearchParam.isError, 'unknown search parameter was not rejected');
+
+  const limited = await tool('fetch', { url: article, json: true, linkLimit: 1 }, 31);
+  assert.ok(!limited.isError, limited.text);
+  assert.equal(JSON.parse(limited.text).links.length, 1, 'linkLimit was not applied');
+
+  const linksJson = await tool('fetch', { url: article, linksOnly: true, json: true }, 32);
+  assert.ok(!linksJson.isError, linksJson.text);
+  const linksPayload = JSON.parse(linksJson.text);
+  assert.equal(linksPayload.title, 'Fixture');
+  assert.equal(linksPayload.markdown, '');
+  assert.equal(linksPayload.links.length, 2);
+
+  const noCache = await tool('fetch', { url: `${base}/etag`, cache: true, noCache: true }, 33);
+  assert.ok(!noCache.isError, noCache.text);
+  assert.ok(!/cached: true/.test(noCache.text), 'noCache reused a cached copy');
   console.log('ok   tools/call robustness edges');
 
   if (process.argv.includes('--live')) {

@@ -41,6 +41,7 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | 选项 | 说明 |
 |---|---|
 | `--max-chars <n>` | 正文输出上限，默认 `60000`，超出截断并标记 |
+| `--link-limit <n>` | 链接清单条数上限，默认 `50`（1–1000） |
 | `--no-links` | 不输出链接清单 |
 | `--links-only` | 只输出链接清单 |
 | `--outline` | 只输出标题大纲（层级 + 每节字符数） |
@@ -189,13 +190,15 @@ web-catch --mcp
 |---|---|
 | `url` | 绝对 http(s) URL |
 | `maxChars` | 正文输出上限，默认 `60000` |
+| `linkLimit` | 链接清单条数上限，默认 `50`（1–1000） |
 | `links` | 是否附带链接清单，默认 `true` |
-| `linksOnly` | 只返回链接清单（跳过正文抽取，用于页面侦察） |
+| `linksOnly` | 只返回链接清单（跳过正文抽取，用于页面侦察；`json` 模式下带页面标题） |
 | `outlineOnly` | 只返回标题大纲（`json` 模式下 `markdown` 同为大纲文本，另附 `outline[]`） |
 | `json` | 返回与 CLI `--json` 同构的结构化对象 |
 | `raw` | 跳过正文抽取，返回解码后的文本（仅 http） |
 | `via` | `http`（默认）或 `api` |
 | `cache` | 条件请求缓存（仅 http） |
+| `noCache` | 跳过缓存读取，但仍刷新缓存（配合 `cache` 使用） |
 | `timeout` | 请求超时秒数，默认 `15` |
 | `retries` | 重试次数，默认 `2`，`0` 表示不重试 |
 | `userAgent` | 覆盖 UA |
@@ -205,7 +208,7 @@ web-catch --mcp
 
 `search`：`query`、`count`、`needContent`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。`maxChars` 只作用于 `fetchTop` 抓取的每页，单页最多 20000 字符。
 
-`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。
+`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。MCP 参数是严格 schema：拼错或不认识的参数会直接报 `Invalid arguments`，不会被静默忽略。
 
 `headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取；`raw` 与 `api` 传输不返回链接（`links: []`）。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
 

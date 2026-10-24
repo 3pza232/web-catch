@@ -72,6 +72,7 @@ test('parseArgs: fractional timeout accepted, upper bounds enforced', () => {
   assert.equal(parseArgs(['https://a.example', '--timeout', '0.5']).options.timeout, 0.5);
   assert.throws(() => parseArgs(['https://a.example', '--timeout', '601']), CliError);
   assert.throws(() => parseArgs(['https://a.example', '--retries', '11']), CliError);
+  assert.equal(parseArgs(['https://a.example', '--link-limit', '7']).options.linkLimit, 7);
 });
 
 test('headers: line breaks are rejected', () => {
@@ -195,10 +196,16 @@ function htmlPage() {
 
 test('page: linksOnly returns links and skips article extraction', async () => {
   const result = await extractPage(htmlPage(), { linksOnly: true });
+  assert.equal(result.title, 'Fixture');
   assert.equal(result.markdown, '');
   assert.equal(result.chars, 0);
   assert.ok(result.links.length >= 2, 'linksOnly returned no links');
   assert.ok(result.links.every((link) => link.href.startsWith('https://')));
+});
+
+test('page: linkLimit caps the link list', async () => {
+  const result = await extractPage(htmlPage(), { linkLimit: 1 });
+  assert.equal(result.links.length, 1);
 });
 
 test('page: linksOnly implies links even with noLinks', async () => {
