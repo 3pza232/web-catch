@@ -8,8 +8,9 @@ try {
   if (error instanceof CliError) {
     process.stderr.write(`error: ${error.message}\n`);
     if (error.hint) process.stderr.write(`  ${error.hint}\n`);
-    process.exit(error.exit);
+    process.exitCode = error.exit;
+  } else {
+    process.stderr.write(`error: ${error?.message || error}\n`);
+    process.exitCode = 1;
   }
-  process.stderr.write(`error: ${error?.message || error}\n`);
-  process.exit(1);
 }
