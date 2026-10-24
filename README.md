@@ -100,7 +100,7 @@ truncated: true (limit 60000 chars)
    - context: 链接周围的文字片段
 ```
 
-`--json` 的字段（`pages` 仅 PDF 出现，`status` 在 api/stdin 下缺省，`outline` 仅在 `--outline` 时出现，`extractedReason` 仅在提取降级时出现）：
+`--json` 的字段（`pages` 仅 PDF 出现，`status` 在 api/stdin 下缺省，`outline` 仅在 `--outline` 时出现，`extractedReason` 仅在提取降级时出现，`cachedAt` 仅在缓存命中时出现，`cacheNote` 仅在缓存不可用时出现）：
 
 ```json
 {
@@ -162,7 +162,7 @@ Fetch API 的 `content` 由上游截断在约 2500 字符（与 `--max-chars` �
 
 `--cache` 会保存响应体与 `ETag` / `Last-Modified`，下次请求发条件头；`304` 时直接复用本地副本并在输出标记 `cached: true`。缓存按 URL + 凭据上下文（cookie / 自定义头 / UA / charset）分键，避免把登录态内容复用给另一个凭据；缓存文件是明文，敏感页面请自行控制目录权限。
 
-目录解析顺序：`$WEB_CATCH_CACHE` → `$XDG_CACHE_HOME/web-catch` → `~/.cache/web-catch` → 系统临时目录 → 可执行文件所在目录下的 `.web-catch-cache`，取第一个可写目录（受限沙箱只允许写工作区/自身目录时会自动降级）。全部不可写时不会静默失效：输出会带 `cache: <原因>`（JSON 为 `cacheNote`），提示设置 `WEB_CATCH_CACHE`。命中 `304` 时会显示 `cached: true`，但 `fetchedAt` 仍是本次校验时间，不是首次抓取时间。
+目录解析：显式设置 `$WEB_CATCH_CACHE` 时只使用该目录（不可写就禁用缓存并通过输出提示，不会写到别处）；未设置时按 `$XDG_CACHE_HOME/web-catch` → `~/.cache/web-catch` → `%LOCALAPPDATA%\web-catch\cache` → 系统临时目录 → 可执行文件所在目录的 `.web-catch-cache` 取第一个可写目录（受限沙箱只允许写工作区/自身目录时会自动降级）。全部不可写时输出 `cache: <原因>`（JSON 为 `cacheNote`）。写入是原子替换（body 先落盘、元数据最后 rename，并记录 size 校验），命中时 JSON 额外给出 `cachedAt`；`fetchedAt` 始终是本次抓取/校验时间。
 
 ## 退出码
 

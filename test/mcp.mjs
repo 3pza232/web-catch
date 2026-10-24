@@ -411,6 +411,11 @@ try {
   const cacheSecond = await tool('fetch', { url: `${base}/etag`, cache: true }, 21);
   assert.ok(!cacheSecond.isError, cacheSecond.text);
   assert.match(cacheSecond.text, /cached: true/);
+  const cacheJson = await tool('fetch', { url: `${base}/etag`, cache: true, json: true }, 43);
+  assert.ok(!cacheJson.isError, cacheJson.text);
+  const cachePayload = JSON.parse(cacheJson.text);
+  assert.equal(cachePayload.cached, true);
+  assert.match(cachePayload.cachedAt, /^\d{4}-\d{2}-\d{2}T/);
 
   const badCharset = await tool('fetch', { url: article, charset: 'definitely-not-a-charset' }, 22);
   assert.ok(badCharset.isError, 'invalid charset was not rejected');

@@ -392,20 +392,30 @@ test('cache: unquoted ETag values are accepted', async () => {
   }
 });
 
-test('cache: unwritable directory falls back to a writable candidate', async () => {
+test('cache: a body/metadata size mismatch is treated as a miss', async () => {
+  const saved = process.env.WEB_CATCH_CACHE;
+  process.env.WEB_CATCH_CACHE = mkdtempSync(join(tmpdir(), 'web-catch-cache-'));
+  try {
+    const url = 'https://ex.com/size';
+    const bytes = new TextEncoder().encode('body');
+    await writeCache(url, '', { etag: '"v1"', contentType: 'text/html' }, bytes);
+    writeFileSync(join(cacheRoot(), keyOf(url, '') + '.body'), new TextEncoder().encode('body!'));
+    assert.equal(await readCache(url), null);
+  } finally {
+    if (saved === undefined) delete process.env.WEB_CATCH_CACHE;
+    else process.env.WEB_CATCH_CACHE = saved;
+  }
+});
+
+test('cache: an unwritable explicit directory disables caching with a status', async () => {
   const saved = process.env.WEB_CATCH_CACHE;
   const file = join(mkdtempSync(join(tmpdir(), 'web-catch-cache-')), 'not-a-dir');
   writeFileSync(file, 'x');
   process.env.WEB_CATCH_CACHE = file;
   try {
-    const root = cacheRoot();
-    if (!root) {
-      assert.equal(await writeCache('https://ex.com/x', '', { etag: '"v1"' }, new Uint8Array(1)), 'unavailable');
-      return;
-    }
-    assert.notEqual(root, file);
-    assert.equal(await writeCache('https://ex.com/fallback', '', { etag: '"v1"' }, new Uint8Array(1)), 'stored');
-    assert.equal((await readCache('https://ex.com/fallback')).etag, '"v1"');
+    assert.equal(cacheRoot(), '');
+    assert.equal(await readCache('https://ex.com/x'), null);
+    assert.equal(await writeCache('https://ex.com/x', '', { etag: '"v1"' }, new Uint8Array(1)), 'unavailable');
   } finally {
     if (saved === undefined) delete process.env.WEB_CATCH_CACHE;
     else process.env.WEB_CATCH_CACHE = saved;
