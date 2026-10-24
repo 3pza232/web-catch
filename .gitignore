@@ -1,0 +1,12 @@
+node_modules/
+web-catch.exe
+*.log
+.cache/
+dist/
+coverage/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak

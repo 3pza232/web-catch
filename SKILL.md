@@ -1,85 +1,65 @@
 ---
 name: web-catch
-description: web-catch 是独立 CLI 工具，非内置工具。当用户贴出 URL，或问"XXX是什么/怎么做"等需要从网页获取信息的问题时触发。加载此 skill 获取 web-catch CLI 工具的使用说明，然后在 Bash 中执行，常与 WebSearch 配合使用：先搜后抓。。
+description: web-catch 是命令行网页抓取/搜索工具（不是内置工具）。用户贴出 URL、需要网页正文、需要页面链接清单、需要抓 PDF，或需要"搜索并阅读前几条结果"时使用：先 `web-catch <url>` 取正文，或 `web-catch search "<query>" --fetch-top N` 一步完成搜索+阅读。
 ---
 
-# web-catch — 网页内容提取 CLI 工具
+# web-catch
 
-## 重要：执行方式
+网页 → 干净 Markdown 的 CLI，也能调 DeepSeek Search API 做搜索。**在 Bash/PowerShell 工具里执行，不要用内置 web_fetch 代替**它，除非只是想粗略看一眼页面。
 
-web-catch 是安装在系统上的独立 CLI 可执行文件，**不是 WebFetch 工具**。
+## 何时用
 
-**正确执行方式：在 Bash 中运行 `web-catch <url>`。**
+- 用户给出 URL，需要正文/细节
+- 需要判断一个页面值不值得读（`--outline`）
+- 需要页面的出口链接、想继续深挖（`--links-only`）
+- 需要抓 PDF 或 JSON/XML（自动分派，`--raw` 兜底）
+- 需要"先搜后读"，且已配置 `DEEPSEEK_API_KEY`
 
-**禁止：** 不要使用 WebFetch 工具代替 web-catch。用户安装 web-catch 就是为了替代它。
+## 命令速查
 
-## 基础用法
-
-```
-web-catch <url>                          # 抓取正文 + 链接
-web-catch <url> --no-links               # 只要正文，不要链接
-web-catch <url> --links-only             # 只要链接，不要正文（侦查用）
-web-catch <url> --timeout 15             # 自定义超时（默认10s）
-web-catch <url> --user-agent "xxx"       # 自定义 UA（默认 web-catch/0.1.0）
-web-catch <url> --output file.md         # 写入文件
-curl <url> | web-catch --url <url>       # 管道模式
-```
-
-所有上述命令都在 **Bash** 工具中执行。
-
-## 输出格式
-
-```
-url: https://example.com
-title: 页面标题
-fetch_time: 2026-06-16 12:00:00 UTC
-word_count: 2340
-
-# 正文 Markdown...
----
-## 页面链接 (14)
-1. [链接标题](https://...)
-   - 上下文: 周围的文字片段
+```sh
+web-catch <url>                       # 正文 + 链接清单
+web-catch <url> --no-links            # 只要正文
+web-catch <url> --outline             # 标题大纲（省 token 的侦察步骤）
+web-catch <url> --links-only          # 只要链接
+web-catch <url> --json                # 结构化结果
+web-catch <url> --max-chars 20000     # 收紧输出上限（默认 60000）
+web-catch <url> --via api             # 直连被拦时改走 DeepSeek Fetch API
+web-catch <url> --cookie-file c.txt   # 需要登录态的页面
+web-catch search "<query>" --count 5 --fetch-top 2
+web-catch search '"exact phrase" site:news.ycombinator.com' --json
+curl -s <url> | web-catch --url <url> # 已有 HTML 时走管道
 ```
 
-## 触发场景与操作方式
+## 输出怎么读
 
-### A. 用户贴了 URL
-→ **Bash:** `web-catch <url>`
-
-### B. 用户问需要查资料的问题（核心工作流）
-先用 **WebSearch** 搜到 URL，再用 **web-catch** 抓详情：
+头部是元数据，正文从第一个空行之后开始：
 
 ```
-用户: "Noita种太阳的流程是什么?"
-  → WebSearch("Noita 种太阳 流程") 获取相关 URL
-    → Bash("web-catch https://noita.wiki.gg/zh/wiki/太阳") 抓取详细攻略
+url / title / fetched / transport / chars (words N) / status
+truncated: true (limit 60000)   → 正文被截断，可加大 --max-chars 或分段抓
+extracted: false（JSON 里的字段）→ Readability 没识别出正文，markdown 是整页文本
+cached: true                    → 命中条件缓存
+pages: N                        → PDF 页数
 ```
 
-这样搜+读闭环，比只用其中任何一个都完整。
+正文之后是 `## Page links (N)`，每条链接带 40 字上下文——用来决定下一步抓哪个子页面。
+链接已去掉 `utm_*` 等跟踪参数并去重。
 
-### C. 需要侦查页面结构（大页面/不确定价值时）
-→ **Bash:** `web-catch <url> --links-only` 看页面有哪些出口，再决定抓哪个子页面。
+## 退出码
 
-## 行为细节
-
-- **JS 不执行** — 基于 `linkedom` 解析 DOM，SPA 页面正文为空时自动降级输出原始 body 文本
-- **自动跟随重定向** — `redirect: follow`，finalUrl 是重定向后的地址
-- **链接限 50 条** — 页面链接最多输出 50 条，超出截断
-- **链接只从正文区域提取** — `<main>/<article>/[role=main]/.content/#content` 等
-- **编码自动检测** — 支持 UTF-8/16/32 及 BOM 检测
-
-## 常见失败处理
-
-| 症状 | 原因 | 对策 |
-|------|------|------|
-| word_count=1，正文为空 | SPA / JS 渲染页 | 提示用户页面是 SPA，建议手动复制内容 |
-| 正文有但明显残缺 | 需要登录/反爬 | 尝试 `--user-agent` 换 UA，或提示需要认证 |
-| timeout | 网络慢或资源大 | `--timeout 15` 或更多 |
-| HTTP 4xx/5xx | 链接失效或服务器拒绝 | 如实告诉用户状态码 |
+| 码 | 含义 | 处置 |
+|---|---|---|
+| 0 | 成功 | — |
+| 1 | 网络 / HTTP 错误 | 换 `--timeout` / `--retries`，或核对 URL |
+| 2 | 无可用正文 / 不支持的类型 | 试 `--raw`、`--via api`，或如实告诉用户 |
+| 3 | 参数错误 | 检查命令拼写 |
+| 4 | 上游 API 错误 | 401 缺 key、402 余额、429 限流；不要盲目重试 |
 
 ## 注意事项
 
-- SPA 页面（Vue/React 单页应用）无法正常提取 — 无法绕过
-- word_count 对中文按空格分词，仅供参考
-- 遇到明确说"不要抓取"的用户指示，尊重要求
+- **不执行 JavaScript**：SPA 页面正文可能为空，`extracted: false` 时不要假装读到了内容；提示用户或改 `--via api`。
+- **搜索要花钱**：Search/Fetch 按成功请求计费（约 5 元 / 1000 次），别用它做无目的试探；`--json` 一次拿全，避免重复调用。
+- **中文编码**已处理（GBK/GB2312 自动转 gb18030），不需要手工转码。
+- **不要**用它抓需要人机验证、付费墙的页面来绕过限制；有正当凭据时用 `--cookie-file` / `--header`。
+- 需要长期复用同一页面时加 `--cache`，避免重复计费与重复抓取。

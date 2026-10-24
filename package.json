@@ -1,14 +1,43 @@
 {
   "name": "web-catch",
-  "version": "0.1.0",
-  "description": "网页内容提取：URL → 干净 Markdown",
+  "version": "0.2.0",
+  "description": "Fetch web pages as clean Markdown — or search the web through the DeepSeek Search API.",
   "type": "module",
   "bin": {
     "web-catch": "bin/cli.mjs"
   },
+  "exports": {
+    ".": "./lib/page.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node test/smoke.mjs",
+    "test:live": "node test/smoke.mjs --live"
+  },
+  "keywords": [
+    "cli",
+    "markdown",
+    "readability",
+    "web-scraping",
+    "deepseek"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
-    "linkedom": "^0.18.0",
-    "turndown": "^7.2.0"
+    "linkedom": "^0.18.12",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "unpdf": "^1.9.1"
   }
 }
