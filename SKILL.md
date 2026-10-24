@@ -13,10 +13,10 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 
 | MCP 工具 | 等价 CLI |
 |---|---|
-| `mcp__webcatch__fetch` `{url, outlineOnly?, linksOnly?, links?, maxChars?, linkLimit?, json?, raw?, via?, cache?, noCache?, timeout?, retries?, userAgent?, headers?, cookieFile?, charset?}` | `web-catch <url> [--outline] [--links-only] [--no-links] [--max-chars N] [--link-limit N] [--json] [--raw] [--via api] [--cache] [--no-cache] [--timeout S] [--retries N] [--user-agent U] [--header "K: V"] [--cookie-file F] [--charset C]` |
-| `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?, json?, timeout?, retries?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N] [--json]` |
+| `mcp__webcatch__fetch` `{url, outlineOnly?, linksOnly?, links?, maxChars?, linkLimit?, json?, raw?, via?, apiLang?, unescape?, cache?, noCache?, timeout?, retries?, userAgent?, headers?, cookieFile?, charset?}` | `web-catch <url> [--outline] [--links-only] [--no-links] [--max-chars N] [--link-limit N] [--json] [--raw] [--via api] [--api-lang L] [--no-unescape] [--cache] [--no-cache] [--timeout S] [--retries N] [--user-agent U] [--header "K: V"] [--cookie-file F] [--charset C]` |
+| `mcp__webcatch__search` `{query, count?, needContent?, oriQuestion?, localization?, fetchTop?, maxChars?, json?, timeout?, retries?}` | `web-catch search "<query>" --count N [--need-content] [--ori-question Q] [--localization IP] [--fetch-top N] [--json]` |
 
-`linksOnly` / `outlineOnly` / `raw` 是互斥的输出模式；`json` 可与任一模式组合（`json` 只是序列化方式，内容仍由模式决定：`outlineOnly + json` 的 `markdown` 也是大纲文本）。MCP 参数为严格 schema，拼错参数会直接报错。`search.maxChars` 只作用于 `fetchTop`，单页最多 20000 字符。
+`linksOnly` / `outlineOnly` / `raw` 是互斥的输出模式；`json` 可与任一模式组合（`json` 只是序列化方式，内容仍由模式决定：`outlineOnly + json` 的 `markdown` 是纯大纲标题，元数据看顶层字段）。MCP 参数为严格 schema，拼错参数会直接报错。`search.maxChars` 只作用于 `fetchTop`，单页最多 20000 字符。
 
 没有 MCP 工具时，在 Bash/PowerShell 里执行下面的命令（要求 `web-catch` 在 PATH，或 `node D:\web-catch\bin\cli.mjs`）。
 
@@ -28,6 +28,7 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 - 需要抓 PDF 或 JSON/XML（自动分派，`--raw` 兜底）
 - 需要"先搜后读"，且已配置 `DEEPSEEK_API_KEY`
 - 网络抖动：用 `timeout` / `retries`；登录态或反爬页面：用 `cookieFile` / `headers`（`cookieFile`、`headers`、`cache`、`raw` 仅 http 传输）
+- 走 `via:"api"` 且上游返回多语言/多余转义时：用 `apiLang`（如 `en`、`zh`、`auto`）只保留一种语言，工具会自动去掉无害的标点转义（代码块不动）
 - 要给程序/AI 消费而不是人读：用 `json`（MCP）或 `--json`（CLI），字段一致
 
 ## 命令速查
@@ -40,6 +41,7 @@ web-catch <url> --links-only          # 只要链接
 web-catch <url> --json                # 结构化结果
 web-catch <url> --max-chars 20000     # 收紧输出上限（默认 60000）
 web-catch <url> --via api             # 直连被拦时改走 DeepSeek Fetch API
+web-catch <url> --via api --api-lang en  # api 通道只保留英文
 web-catch <url> --cookie-file c.txt   # 需要登录态的页面
 web-catch search "<query>" --count 5 --fetch-top 2
 web-catch search '"exact phrase" site:news.ycombinator.com' --json

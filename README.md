@@ -5,7 +5,8 @@
 - **抓取**：Readability 抽取正文 + GFM 表格 + 代码块，附页面链接清单（带上下文）
 - **搜索**：接 DeepSeek Search API，可 `--fetch-top` 直接抓取前 N 条正文，搜索与阅读闭环
 - **纯文本/JSON/XML/PDF**：按 `Content-Type` 与文件头自动分派
-- **面向 agent**：`--json`、`--outline`、`--max-chars`、稳定的退出码
+- **面向 agent**：`--json`、`--outline`、`--max-chars`、`--link-limit`、稳定的退出码
+- **API 兜底可净化**：`--via api` 支持语言过滤（`--api-lang`）并自动处理上游 Markdown 转义
 
 ## 安装
 
@@ -49,6 +50,8 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 | `--json` | 输出结构化结果（见下） |
 | `-o, --output <file>` | 写入文件 |
 | `--via http\|api` | 传输方式：直连 HTTP（默认）或 DeepSeek Fetch API |
+| `--api-lang <lang>` | 仅 `--via api`：只保留该语言的内容（`en`、`zh`、`auto` 等；`auto` 按标题语言） |
+| `--no-unescape` | 仅 `--via api`：保留上游 Markdown 标点转义（默认会去掉无害转义） |
 | `--timeout <sec>` | 请求超时，默认 15（API 传输同样生效） |
 | `--retries <n>` | 网络错误与 408/429/5xx 的重试次数，默认 2，`0` 关闭重试 |
 | `--user-agent <str>` | 覆盖 UA |
@@ -67,6 +70,8 @@ web-catch search "deepseek v3.2 release" --count 5 --fetch-top 2
 |---|---|
 | `--count <n>` | 结果条数 1–50，默认 10 |
 | `--need-content` | 让 API 直接返回正文（`content` 字段） |
+| `--ori-question <text>` | 触发搜索的原始问题，帮助理解意图（1–128 字符） |
+| `--localization <ip>` | 用该 IP 偏好本地化搜索结果 |
 | `--fetch-top <n>` | 额外抓取前 n 条正文并附在结果后 |
 | `--json` | 输出结构化搜索结果（`query` / `count` / `results` / `fetched`） |
 | `--api-key <key>` | 覆盖 `DEEPSEEK_API_KEY` |
@@ -117,7 +122,7 @@ truncated: true (limit 60000 chars)
 }
 ```
 
-`extracted: false` 表示 Readability 没能识别正文，`markdown` 是整页可见文本（SPA 常见）。`--json --outline` 时 `markdown` 是大纲文本而非全文。
+`extracted: false` 表示 Readability 没能识别正文，`markdown` 是整页可见文本（SPA 常见）。`--json --outline` 时 `markdown` 是大纲正文（纯 Markdown 标题，不含元数据头；元数据在顶层字段）。
 
 ## 凭据解析（受管终端里也能用）
 
@@ -136,6 +141,8 @@ DSH 等 harness 在 spawn 子进程前会剥离名字含 `KEY|PASSWORD|SECRET|TO
 
 只有第 4 步会访问注册表，且仅限 Windows；key 不会写入日志或输出。库使用者可用 `apiKeySource()` 做诊断。
 
+Fetch API 的 `content` 由上游截断在约 2500 字符（与 `--max-chars` 无关），因此 `--via api` 拿到的是节选而非全文；需要长文时优先直连 HTTP。
+
 ## 搜索后端
 
 搜索走 DeepSeek 官方 Search / Fetch API：
@@ -153,7 +160,9 @@ DSH 等 harness 在 spawn 子进程前会剥离名字含 `KEY|PASSWORD|SECRET|TO
 
 ## 缓存
 
-`--cache` 会保存响应体与 `ETag` / `Last-Modified`，下次请求发条件头；`304` 时直接复用本地副本并在输出标记 `cached: true`。缓存按 URL + 凭据上下文（cookie / 自定义头 / UA / charset）分键，避免把登录态内容复用给另一个凭据；缓存文件是明文，敏感页面请自行控制 `$WEB_CATCH_CACHE` 目录权限。位置 `$WEB_CATCH_CACHE` 或 `~/.cache/web-catch`。
+`--cache` 会保存响应体与 `ETag` / `Last-Modified`，下次请求发条件头；`304` 时直接复用本地副本并在输出标记 `cached: true`。缓存按 URL + 凭据上下文（cookie / 自定义头 / UA / charset）分键，避免把登录态内容复用给另一个凭据；缓存文件是明文，敏感页面请自行控制目录权限。
+
+目录解析顺序：`$WEB_CATCH_CACHE` → `$XDG_CACHE_HOME/web-catch` → `~/.cache/web-catch` → 系统临时目录 → 可执行文件所在目录下的 `.web-catch-cache`，取第一个可写目录（受限沙箱只允许写工作区/自身目录时会自动降级）。全部不可写时不会静默失效：输出会带 `cache: <原因>`（JSON 为 `cacheNote`），提示设置 `WEB_CATCH_CACHE`。命中 `304` 时会显示 `cached: true`，但 `fetchedAt` 仍是本次校验时间，不是首次抓取时间。
 
 ## 退出码
 
@@ -197,6 +206,8 @@ web-catch --mcp
 | `json` | 返回与 CLI `--json` 同构的结构化对象 |
 | `raw` | 跳过正文抽取，返回解码后的文本（仅 http） |
 | `via` | `http`（默认）或 `api` |
+| `apiLang` | 仅 `via: "api"`：只保留指定语言（`en`、`zh`、`auto` 等） |
+| `unescape` | 仅 `via: "api"`：去掉渲染等价的上游标点转义（默认 `true`） |
 | `cache` | 条件请求缓存（仅 http） |
 | `noCache` | 跳过缓存读取，但仍刷新缓存（配合 `cache` 使用） |
 | `timeout` | 请求超时秒数，默认 `15` |
@@ -206,9 +217,9 @@ web-catch --mcp
 | `cookieFile` | Netscape cookie 文件路径（登录态页面） |
 | `charset` | 强制源编码（如 `gbk`） |
 
-`search`：`query`、`count`、`needContent`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。`maxChars` 只作用于 `fetchTop` 抓取的每页，单页最多 20000 字符。
+`search`：`query`、`count`、`needContent`、`oriQuestion`、`localization`、`fetchTop`、`maxChars`、`json`、`timeout`、`retries`。`maxChars` 只作用于 `fetchTop` 抓取的每页，单页最多 20000 字符。
 
-`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。MCP 参数是严格 schema：拼错或不认识的参数会直接报 `Invalid arguments`，不会被静默忽略。
+`linksOnly` / `outlineOnly` / `raw` 是三种互斥的输出模式，不能组合；`json` 可与它们中的任意一种组合（`json` 决定输出格式，模式决定取哪些字段）。MCP 参数是严格 schema：拼错或不认识的参数会直接报 `Invalid arguments`，不会被静默忽略。`apiLang: "auto"` 优先用标题语言；标题太短无法判断时改用正文中占多数的语言，仍无法判断则不过滤（避免误删）。
 
 `headers` / `cookieFile` / `userAgent` / `charset` / `raw` / `cache` 只在 `via: "http"` 时生效（`api` 由 DeepSeek 服务端抓取）；`timeout` / `retries` 对两种传输都生效。`linksOnly` 走 `api` 会明确报错，因为链接必须从 HTML 里取；`raw` 与 `api` 传输不返回链接（`links: []`）。网络不稳时调 `timeout` / `retries`，登录态或反爬页面用 `cookieFile` / `headers`。
 
@@ -239,13 +250,14 @@ bin/cli.mjs         进程入口：异常 → 退出码
 lib/cli/            参数解析、帮助、命令分发
 lib/commands/       fetch 与 search 的命令级编排（解析入参 → 调 page → 渲染）
 lib/page.mjs        URL/HTML → 页面结果对象（网络 + 分派 + 抽取，无渲染）
+lib/api-content.mjs Fetch API 内容归一化（语言过滤、安全去转义）
 lib/mcp.mjs         MCP stdio 服务（复用 page / deepseek / serialize / render）
 lib/net/            http（重试/超时/头/条件请求）、decode（编码探测）、deepseek（API 客户端）
 lib/extract/        dom / article（Readability + Turndown GFM）/ links / pdf
-lib/cache.mjs       条件请求缓存
+lib/cache.mjs       条件请求缓存（可用目录自动降级）
 lib/serialize.mjs   页面/搜索结果 → 稳定的 JSON 契约（CLI --json 与 MCP json 共用）
-lib/render.mjs      Markdown / outline / links / search 渲染与截断
-lib/text.mjs        规范化、统计、大纲
+lib/render.mjs      Markdown / outline / links / search 渲染
+lib/text.mjs        规范化、统计、大纲、截断
 lib/constants.mjs   版本、默认值、退出码、内容类型
 ```
 
@@ -255,7 +267,7 @@ lib/constants.mjs   版本、默认值、退出码、内容类型
 
 - 不执行 JavaScript，SPA 需要应用自身渲染（或 `--via api` 由服务端处理）
 - 不自动绕过登录、验证码、付费墙；可用 `--cookie-file` / `--header` 携带凭据
-- `--via api` 返回的是 DeepSeek Fetch API 的原始 `content`：可能包含多语言译文，以及上游加的 Markdown 反斜杠转义（如 `\.`）；这是上游行为，工具不做二次解转义（避免破坏代码块里的反斜杠）
+- `--via api` 返回的是 DeepSeek Fetch API 的原始 `content`：上游可能返回多语言版本和 Markdown 转义。工具默认做两件事：去转义（只处理 `. , ; : ! ?`，跳过代码块/行内代码），以及可选的语言过滤（`--api-lang` / MCP `apiLang`，含 `auto`）；语言过滤只保留命中目标语言的段落，代码块和无语言段落会保留，过滤后为空则回退原文
 - 搜索能力依赖外部 API（本工具不自建搜索引擎）
 
 ## 路线图

@@ -1,6 +1,6 @@
 {
   "name": "web-catch",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Fetch web pages as clean Markdown, search the web, or serve both as an MCP server.",
   "type": "module",
   "bin": {

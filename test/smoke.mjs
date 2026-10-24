@@ -10,13 +10,14 @@ import { normalizeLink, extractLinks } from '../lib/extract/links.mjs';
 import { createDom } from '../lib/extract/dom.mjs';
 import { extractArticle } from '../lib/extract/article.mjs';
 import { extractPage, fetchPage } from '../lib/page.mjs';
-import { outline, measure, normalize } from '../lib/text.mjs';
-import { renderLinks, renderPage, truncate } from '../lib/render.mjs';
+import { outline, measure, normalize, truncate } from '../lib/text.mjs';
+import { renderLinks, renderOutlineBody, renderPage } from '../lib/render.mjs';
 import { serializePage, serializeSearch } from '../lib/serialize.mjs';
 import { CliError } from '../lib/errors.mjs';
 import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
 import { parseHeaders, readCookieFile } from '../lib/net/http.mjs';
 import { readCache, writeCache, cacheRoot, keyOf } from '../lib/cache.mjs';
+import { detectLanguage, filterLanguages, normalizeApiContent, unescapePunctuation } from '../lib/api-content.mjs';
 import { DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES } from '../lib/constants.mjs';
 
 const tests = [];
@@ -138,6 +139,14 @@ test('render: truncate respects limit', () => {
   assert.equal(body.truncated, true);
   assert.ok(body.text.length <= 40);
   assert.equal(truncate('short', 40).truncated, false);
+});
+
+test('render: outline body is plain Markdown headings', () => {
+  const body = renderOutlineBody([
+    { level: 2, title: 'Concepts', chars: 2182 },
+    { level: 3, title: 'Usage', chars: 42 },
+  ]);
+  assert.equal(body, '## Concepts (2182 chars)\n### Usage (42 chars)');
 });
 
 test('render: standalone links block has no leading separator', () => {
@@ -369,6 +378,40 @@ test('cache: corrupt metadata ignored, entries identity-scoped', async () => {
   }
 });
 
+test('cache: unquoted ETag values are accepted', async () => {
+  const saved = process.env.WEB_CATCH_CACHE;
+  process.env.WEB_CATCH_CACHE = mkdtempSync(join(tmpdir(), 'web-catch-cache-'));
+  try {
+    const url = 'https://ex.com/unquoted';
+    const bytes = new TextEncoder().encode('body');
+    assert.equal(await writeCache(url, '', { etag: 'abc123', contentType: 'text/html' }, bytes), 'stored');
+    assert.equal((await readCache(url)).etag, 'abc123');
+  } finally {
+    if (saved === undefined) delete process.env.WEB_CATCH_CACHE;
+    else process.env.WEB_CATCH_CACHE = saved;
+  }
+});
+
+test('cache: unwritable directory falls back to a writable candidate', async () => {
+  const saved = process.env.WEB_CATCH_CACHE;
+  const file = join(mkdtempSync(join(tmpdir(), 'web-catch-cache-')), 'not-a-dir');
+  writeFileSync(file, 'x');
+  process.env.WEB_CATCH_CACHE = file;
+  try {
+    const root = cacheRoot();
+    if (!root) {
+      assert.equal(await writeCache('https://ex.com/x', '', { etag: '"v1"' }, new Uint8Array(1)), 'unavailable');
+      return;
+    }
+    assert.notEqual(root, file);
+    assert.equal(await writeCache('https://ex.com/fallback', '', { etag: '"v1"' }, new Uint8Array(1)), 'stored');
+    assert.equal((await readCache('https://ex.com/fallback')).etag, '"v1"');
+  } finally {
+    if (saved === undefined) delete process.env.WEB_CATCH_CACHE;
+    else process.env.WEB_CATCH_CACHE = saved;
+  }
+});
+
 test('page: raw returns the decoded source instead of markdown', async () => {
   const result = await extractPage(htmlPage(), { raw: true });
   assert.match(result.markdown, /<article>/);
@@ -407,6 +450,56 @@ test('serialize: search contract keeps query, count and fetched pages', () => {
 test('constants: network defaults stay practical', () => {
   assert.equal(DEFAULT_TIMEOUT_MS, 15_000);
   assert.equal(DEFAULT_RETRIES, 2);
+});
+
+test('api content: detects languages by script and function words', () => {
+  assert.equal(detectLanguage('这是一个中文段落，用于测试。'), 'zh');
+  assert.equal(detectLanguage('This is an English paragraph for testing the detector.'), 'en');
+  assert.equal(detectLanguage('هذا النطاق مخصص للاستخدام في أمثلة التوثيق'), 'ar');
+  assert.equal(detectLanguage('Этот домен предназначен для примеров документации'), 'ru');
+  assert.equal(detectLanguage('This is a long English sentence that mentions 汉字 only.'), 'en');
+  assert.equal(detectLanguage('Represents a resource request.'), '');
+  assert.equal(detectLanguage('12345 —'), '');
+});
+
+test('api content: language filter keeps only target blocks and falls back', () => {
+  const content = '中文段落一，用于测试。\n\nThis is an English paragraph for testing.\n\nهذا النطاق مخصص للاستخدام.';
+  const english = filterLanguages(content, 'en');
+  assert.match(english, /English paragraph/);
+  assert.ok(!english.includes('中文'));
+  assert.ok(!english.includes('هذا'));
+  const chinese = filterLanguages(content, 'zh');
+  assert.ok(chinese.includes('中文'));
+  assert.ok(!chinese.includes('English'));
+  assert.equal(filterLanguages('中文段落一。', 'en'), '中文段落一。');
+  const autoTitle = filterLanguages(content, 'auto', '中文标题测试');
+  assert.ok(autoTitle.includes('中文'));
+  const bodyMajority = 'This is English block one.\n\nThis is English block two.\n\n这是一个中文段落。';
+  const autoBody = filterLanguages(bodyMajority, 'auto', 'Ex');
+  assert.match(autoBody, /English block one/);
+  assert.ok(!autoBody.includes('中文'));
+  const openFence = '中文段落。\n\n```js\nconst 中文 = 1;\n';
+  assert.equal(filterLanguages(openFence, 'en'), openFence);
+});
+
+test('api content: unescapes rendering-equivalent punctuation only', () => {
+  assert.equal(
+    unescapePunctuation('a\\. b\\, c\\; d\\: e\\! f\\? g\\(h\\) i\\\' j\\/'),
+    'a. b, c; d: e! f? g(h) i\' j/',
+  );
+  assert.equal(unescapePunctuation('1\\. item\\, x'), '1\\. item, x');
+  assert.equal(unescapePunctuation('`a\\.b`'), '`a\\.b`');
+  assert.equal(unescapePunctuation('```\na\\,b\n```'), '```\na\\,b\n```');
+  assert.equal(unescapePunctuation('```\na\\,b'), '```\na\\,b');
+  assert.equal(unescapePunctuation('\\# heading and \\- list'), '\\# heading and \\- list');
+});
+
+test('api content: normalization combines filtering, unescaping and opt-out', () => {
+  const multi = '中文内容段落。\n\nThis is the original English content\\.';
+  assert.equal(normalizeApiContent(multi, { lang: 'en', title: 'English title' }).trim(),
+    'This is the original English content.');
+  assert.ok(normalizeApiContent('中文内容段落。', { lang: 'en' }).includes('中文'));
+  assert.equal(normalizeApiContent('a\\. b', { unescape: false }), 'a\\. b');
 });
 
 test('config: explicit key wins', () => {

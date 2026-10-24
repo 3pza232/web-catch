@@ -18,8 +18,34 @@ const ARTICLE_HTML = `<!doctype html><html><head><title>Fixture</title></head><b
 <p><a href="/next?utm_source=x">next page</a> and <a href="https://b.example/page?utm_medium=y">outer</a></p>
 </article></body></html>`;
 
+/** Minimal single-page PDF with a correct xref table. */
+function makePdf() {
+  const content = 'BT /F1 18 Tf 72 720 Td (Hello PDF text) Tj ET';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objects.length; index++) {
+    pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
 let flakyHits = 0;
 let badJsonHits = 0;
+let lastSearchBody = {};
 
 /** @param {import('node:http').IncomingMessage} req @returns {Promise<any>} */
 async function readJson(req) {
@@ -36,6 +62,7 @@ const server = createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://127.0.0.1');
   if (pathname === '/v1/tools/search') {
     const body = await readJson(req);
+    lastSearchBody = body;
     if (body.query === 'slow') {
       setTimeout(() => {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -64,6 +91,19 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (pathname === '/v1/tools/fetch') {
+    const body = await readJson(req);
+    if (String(body.url || '').includes('/multi')) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        title: 'Multi example',
+        content: [
+          '该域名仅用于文档示例，无需获得许可。',
+          'This domain is for use in documentation examples without needing permission\\.',
+          'هذا النطاق مخصص للاستخدام في أمثلة التوثيق\\.',
+        ].join('\n\n'),
+      }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ title: 'API fixture', content: 'API body text. '.repeat(40) }));
     return;
@@ -95,6 +135,16 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', etag: '"v1"' });
     res.end(ARTICLE_HTML);
+    return;
+  }
+  if (pathname === '/pdf') {
+    res.writeHead(200, { 'content-type': 'application/pdf' });
+    res.end(makePdf());
+    return;
+  }
+  if (pathname === '/pdf-bad') {
+    res.writeHead(200, { 'content-type': 'application/pdf' });
+    res.end('%PDF-1.4 definitely not a pdf');
     return;
   }
   if (pathname === '/echo') {
@@ -225,13 +275,14 @@ try {
 
   const fetchProps = Object.keys(tools.find((tool_) => tool_.name === 'fetch').inputSchema.properties);
   const expectedFetch = [
-    'url', 'maxChars', 'links', 'linkLimit', 'linksOnly', 'outlineOnly', 'json', 'raw', 'via', 'cache',
-    'noCache', 'timeout', 'retries', 'userAgent', 'headers', 'cookieFile', 'charset',
+    'url', 'maxChars', 'links', 'linkLimit', 'linksOnly', 'outlineOnly', 'json', 'raw', 'via', 'apiLang',
+    'unescape', 'cache', 'noCache', 'timeout', 'retries', 'userAgent', 'headers', 'cookieFile', 'charset',
   ];
   assert.deepEqual(fetchProps.sort(), expectedFetch.sort());
   const searchProps = Object.keys(tools.find((tool_) => tool_.name === 'search').inputSchema.properties);
   assert.deepEqual(searchProps.sort(), [
-    'query', 'count', 'needContent', 'fetchTop', 'maxChars', 'json', 'timeout', 'retries',
+    'query', 'count', 'needContent', 'oriQuestion', 'localization', 'fetchTop', 'maxChars', 'json',
+    'timeout', 'retries',
   ].sort());
   console.log('ok   tools/list schemas expose the CLI parity options');
 
@@ -249,8 +300,9 @@ try {
   const page = JSON.parse(structured.text);
   assert.equal(page.url, article);
   assert.equal(page.transport, 'http');
-  assert.match(page.markdown, /^url: /);
-  assert.match(page.markdown, /headings: \d+/);
+  assert.match(page.markdown, /^#+ /);
+  assert.ok(!page.markdown.includes('url:'), 'json outline markdown leaked the metadata header');
+  assert.ok(!page.markdown.includes('headings:'), 'json outline markdown leaked the metadata header');
   assert.ok(!page.markdown.includes('Paragraph text'), 'json outlineOnly leaked the full body');
   assert.deepEqual(page.links, []);
   assert.ok(Array.isArray(page.outline) && page.outline.length >= 1);
@@ -407,6 +459,56 @@ try {
   const noCache = await tool('fetch', { url: `${base}/etag`, cache: true, noCache: true }, 33);
   assert.ok(!noCache.isError, noCache.text);
   assert.ok(!/cached: true/.test(noCache.text), 'noCache reused a cached copy');
+
+  const pdf = await tool('fetch', { url: `${base}/pdf`, json: true }, 34);
+  assert.ok(!pdf.isError, pdf.text);
+  const pdfPage = JSON.parse(pdf.text);
+  assert.equal(pdfPage.pages, 1);
+  assert.match(pdfPage.markdown, /Hello PDF text/);
+  const badPdf = await tool('fetch', { url: `${base}/pdf-bad` }, 35);
+  assert.ok(badPdf.isError, 'corrupt pdf was not reported');
+  assert.match(badPdf.text, /PDF/);
+
+  const apiMulti = await tool('fetch', { url: 'https://api.example/multi', via: 'api', json: true }, 36);
+  assert.ok(!apiMulti.isError, apiMulti.text);
+  const multiPage = JSON.parse(apiMulti.text);
+  assert.match(multiPage.markdown, /该域名/);
+  assert.match(multiPage.markdown, /without needing permission\./);
+  assert.ok(!multiPage.markdown.includes('\\.'), 'api punctuation escapes were not removed');
+
+  const apiEnglish = await tool('fetch', {
+    url: 'https://api.example/multi', via: 'api', apiLang: 'en', json: true,
+  }, 37);
+  assert.ok(!apiEnglish.isError, apiEnglish.text);
+  const englishPage = JSON.parse(apiEnglish.text);
+  assert.match(englishPage.markdown, /This domain/);
+  assert.ok(!englishPage.markdown.includes('该域名'), 'apiLang filter kept Chinese content');
+  assert.ok(!englishPage.markdown.includes('هذا'), 'apiLang filter kept Arabic content');
+
+  const apiLangBad = await tool('fetch', { url: article, apiLang: 'en' }, 38);
+  assert.ok(apiLangBad.isError, 'apiLang without via=api was not rejected');
+  assert.match(apiLangBad.text, /only available with via/);
+
+  const apiRaw = await tool('fetch', {
+    url: 'https://api.example/multi', via: 'api', json: true, unescape: false,
+  }, 41);
+  assert.ok(!apiRaw.isError, apiRaw.text);
+  assert.ok(JSON.parse(apiRaw.text).markdown.includes('\\.'), 'unescape:false did not keep escapes');
+  const unescapeBad = await tool('fetch', { url: article, unescape: false }, 42);
+  assert.ok(unescapeBad.isError, 'unescape without via=api was not rejected');
+  assert.match(unescapeBad.text, /only available with via/);
+
+  lastSearchBody = {};
+  const searchMeta = await tool('search', {
+    query: 'fixture', count: 1, oriQuestion: 'original question', localization: '1.2.3.4',
+  }, 39);
+  assert.ok(!searchMeta.isError, searchMeta.text);
+  assert.equal(lastSearchBody.ori_question, 'original question');
+  assert.equal(lastSearchBody.localization, '1.2.3.4');
+
+  const longQuery = await tool('search', { query: 'x'.repeat(129) }, 40);
+  assert.ok(longQuery.isError, 'oversized search query was not rejected');
+  assert.match(longQuery.text, /at most 128/);
   console.log('ok   tools/call robustness edges');
 
   if (process.argv.includes('--live')) {
