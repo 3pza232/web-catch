@@ -115,6 +115,23 @@ truncated: true (limit 60000 chars)
 
 `extracted: false` 表示 Readability 没能识别正文，`markdown` 是整页可见文本（SPA 常见）。
 
+## 凭据解析（受管终端里也能用）
+
+DSH 等 harness 在 spawn 子进程前会剥离名字含 `KEY|PASSWORD|SECRET|TOKEN` 的环境变量，因此在它们的终端里直接跑本 CLI 时，`DEEPSEEK_API_KEY` 通常不可见。凭据按以下顺序解析：
+
+1. `--api-key` / `--api-base`
+2. 环境变量 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`
+3. 配置文件 `~/.web-catch/config.json`（`$WEB_CATCH_CONFIG` 可改路径）：
+
+   ```json
+   { "apiKey": "sk-...", "baseUrl": "https://api.deepseek.com" }
+   ```
+
+   也可写 `"apiKeyEnv": "MY_VAR"` 改为从任意环境变量读取。
+4. Windows：直接查询当前用户环境（注册表 `HKCU\Environment`），绕过环境剥离，只读。
+
+只有第 4 步会访问注册表，且仅限 Windows；key 不会写入日志或输出。库使用者可用 `apiKeySource()` 做诊断。
+
 ## 搜索后端
 
 搜索走 DeepSeek 官方 Search / Fetch API：

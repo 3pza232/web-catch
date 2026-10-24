@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Offline smoke tests; pass --live to also hit the network. */
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseArgs } from '../lib/cli/args.mjs';
 import { detectCharset, decodeBytes } from '../lib/net/decode.mjs';
 import { normalizeLink, extractLinks } from '../lib/extract/links.mjs';
@@ -10,6 +13,7 @@ import { extractPage } from '../lib/page.mjs';
 import { outline, measure, normalize } from '../lib/text.mjs';
 import { truncate } from '../lib/render.mjs';
 import { CliError } from '../lib/errors.mjs';
+import { apiKeySource, resolveApiKey } from '../lib/config.mjs';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -136,6 +140,29 @@ test('page: unsupported type rejects', async () => {
     }),
     (error) => error instanceof CliError && error.code === 'UNSUPPORTED_CONTENT_TYPE',
   );
+});
+
+test('config: explicit key wins', () => {
+  assert.equal(resolveApiKey('explicit-key'), 'explicit-key');
+  assert.equal(apiKeySource('explicit-key'), 'option');
+});
+
+test('config: file supplies the key when the environment is empty', () => {
+  const savedEnv = process.env.DEEPSEEK_API_KEY;
+  const savedConfig = process.env.WEB_CATCH_CONFIG;
+  delete process.env.DEEPSEEK_API_KEY;
+  const file = join(mkdtempSync(join(tmpdir(), 'web-catch-')), 'config.json');
+  writeFileSync(file, JSON.stringify({ apiKey: 'file-key' }));
+  process.env.WEB_CATCH_CONFIG = file;
+  try {
+    assert.equal(resolveApiKey(), 'file-key');
+    assert.equal(apiKeySource(), 'config');
+  } finally {
+    if (savedEnv === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = savedEnv;
+    if (savedConfig === undefined) delete process.env.WEB_CATCH_CONFIG;
+    else process.env.WEB_CATCH_CONFIG = savedConfig;
+  }
 });
 
 /** @returns {Promise<void>} */

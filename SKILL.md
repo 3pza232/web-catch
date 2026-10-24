@@ -59,6 +59,7 @@ pages: N                        → PDF 页数
 ## 注意事项
 
 - **不执行 JavaScript**：SPA 页面正文可能为空，`extracted: false` 时不要假装读到了内容；提示用户或改 `--via api`。
+- **凭据**：在 DSH 等受管 shell 里不需要手动 `export`；CLI 会依次读环境变量 → `~/.web-catch/config.json` → Windows 用户环境变量（注册表）。仍报 401 时检查 key 是否有效、账户是否有余额。
 - **搜索要花钱**：Search/Fetch 按成功请求计费（约 5 元 / 1000 次），别用它做无目的试探；`--json` 一次拿全，避免重复调用。
 - **中文编码**已处理（GBK/GB2312 自动转 gb18030），不需要手工转码。
 - **不要**用它抓需要人机验证、付费墙的页面来绕过限制；有正当凭据时用 `--cookie-file` / `--header`。
