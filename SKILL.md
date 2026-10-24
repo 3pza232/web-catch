@@ -5,7 +5,18 @@ description: web-catch 是命令行网页抓取/搜索工具（不是内置工�
 
 # web-catch
 
-网页 → 干净 Markdown 的 CLI，也能调 DeepSeek Search API 做搜索。**在 Bash/PowerShell 工具里执行，不要用内置 web_fetch 代替**它，除非只是想粗略看一眼页面。
+网页 → 干净 Markdown 的抓取/搜索工具，走 DeepSeek Search API。有 `mcp__webcatch__*` 工具时直接用（不需要 shell）；否则在 Bash/PowerShell 里执行 `web-catch`。
+
+## 两种接入方式
+
+**优先用 MCP 工具**（工具表里出现时）：
+
+| MCP 工具 | 等价 CLI |
+|---|---|
+| `mcp__webcatch__fetch` `{url, outlineOnly?, links?, maxChars?, via?, cache?}` | `web-catch <url> [--outline] [--no-links] [--max-chars N] [--via api] [--cache]` |
+| `mcp__webcatch__search` `{query, count?, needContent?, fetchTop?, maxChars?}` | `web-catch search "<query>" --count N [--need-content] [--fetch-top N]` |
+
+没有 MCP 工具时，在 Bash/PowerShell 里执行下面的命令（要求 `web-catch` 在 PATH，或 `node D:\web-catch\bin\cli.mjs`）。
 
 ## 何时用
 
